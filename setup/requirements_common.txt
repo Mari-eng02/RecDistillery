@@ -1,0 +1,15 @@
+Cython
+setuptools<81
+hyperopt
+numpy<2
+tensorflow
+tqdm
+scipy
+pandas
+Pillow
+PyYAML
+scikit_learn
+gdown
+datarec-lib
+optuna
+wandb

@@ -1,0 +1,4 @@
+-r requirements_common.txt
+
+torch==2.7.0
+torch_geometric==2.6.1

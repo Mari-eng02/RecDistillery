@@ -1,0 +1,326 @@
+# This file is part of LensKit.
+# Copyright (C) 2018-2023 Boise State University.
+# Copyright (C) 2023-2026 Drexel University.
+# Licensed under the MIT license, see LICENSE.md for details.
+# SPDX-License-Identifier: MIT
+
+"Definition of the component interfaces."
+
+# pyright: strict
+from __future__ import annotations
+
+import json
+import warnings
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from inspect import Parameter, isabstract, signature
+from types import FunctionType, NoneType
+from typing import TypeVar, get_args
+
+from pydantic import BaseModel, JsonValue, TypeAdapter
+from typing_extensions import (
+    Any,
+    Callable,
+    Mapping,
+    Protocol,
+    get_annotations,
+    get_origin,
+    get_type_hints,
+    runtime_checkable,
+)
+
+from recommenders.lenskit.diagnostics import PipelineWarning
+from recommenders.lenskit.lazy import Lazy
+
+from ._types import TypecheckWarning, is_compatible_data
+
+type PipelineFunction[COut] = Callable[..., COut]
+"""
+Pure-function interface for pipeline functions.
+"""
+
+
+@dataclass
+class ComponentInput:
+    """
+    Representation of a component input slot.
+    """
+
+    name: str
+    type: type | None = None
+    is_lazy: bool = False
+    accepts_none: bool = False
+    has_default: bool = False
+
+
+@runtime_checkable
+class ComponentConstructor[CFG, COut](Protocol):
+    """
+    Protocol for component constructors.
+    """
+
+    def __call__(self, config: CFG | None = None) -> Component[COut]: ...
+
+    def config_class(self) -> type[CFG] | None: ...
+
+    def validate_config(self, data: Any = None) -> CFG | None: ...
+
+
+class Component[COut](ABC):
+    """
+    Base class for pipeline component objects.  Any component that is not just a
+    function should extend this class.
+
+    Pipeline components support configuration (e.g., hyperparameters or random
+    seeds) through Pydantic models or Python dataclasses; see
+    :ref:`component-config` for further details.  If the pipeline's
+    configuration class is ``C``, it has the following:
+
+    1. The configuration is exposed through an instance variable ``config``.
+    2. The constructor accepts the configuration object as its first parameter,
+       also named ``config``, and saves this in the member variable.
+
+    The base class constructor handles both of these, so long as you declare the
+    type of the ``config`` member::
+
+        class MyComponent(Component):
+            config: MyComponentConfig
+
+            ...
+
+    If you do not declare a ``config`` attribute, the base class will assume the
+    pipeline uses no configuration.
+
+    To work as components, derived classes also need to implement a ``__call__``
+    method to perform their operations.
+
+    Args:
+        config:
+            The configuration object.  If ``None``, the configuration class will
+            be instantiated with ``kwargs``.
+
+    Stability:
+        Full
+    """
+
+    config: Any = None
+    """
+    The component configuration object.  Component classes that support
+    configuration **must** redefine this attribute with their specific
+    configuration class type, which can be a Python dataclass or a Pydantic
+    model class.
+    """
+
+    def __init_subclass__(cls, **kwargs: Any):
+        super().__init_subclass__(**kwargs)
+        if not isabstract(cls):
+            try:
+                ct = cls.config_class(return_any=True)
+            except NameError:
+                # can't look up the config class, so we can't check it
+                pass
+            else:
+                if ct == Any:
+                    warnings.warn(
+                        "component class {} does not define a config attribute type".format(
+                            cls.__qualname__
+                        ),
+                        PipelineWarning,
+                        stacklevel=2,
+                    )
+
+    def __init__(self, config: object | None = None, **kwargs: Any):
+        if config is None:
+            config = self.validate_config(kwargs)
+        elif kwargs:
+            raise RuntimeError("cannot supply both a configuration object and kwargs")
+
+        cfg_cls = self.config_class(return_any=True)
+        if cfg_cls == Any:
+            warnings.warn(
+                "component class {} does not define a config attribute type".format(
+                    self.__class__.__qualname__
+                ),
+                PipelineWarning,
+                stacklevel=2,
+            )
+        elif cfg_cls and not isinstance(config, cfg_cls):
+            raise TypeError(f"invalid configuration type {type(config)}")
+
+        self.config = config
+
+    @classmethod
+    def config_class(cls, return_any: bool = False) -> type | None:
+        hints = get_type_hints(cls)
+        ct = hints.get("config", None)
+        if ct == NoneType:
+            return None
+        elif ct is None or ct == Any:
+            if return_any:
+                return ct
+            else:
+                return None
+        elif isinstance(ct, type):
+            return ct
+        else:
+            warnings.warn("config attribute is not annotated with a plain type", stacklevel=2)
+            return get_origin(ct)
+
+    def dump_config(self) -> dict[str, JsonValue]:
+        """
+        Dump the configuration to JSON-serializable format.
+        """
+        cfg_cls = self.config_class()
+        if cfg_cls:
+            return TypeAdapter(cfg_cls).dump_python(self.config, mode="json")  # type: ignore
+        else:
+            return {}
+
+    @classmethod
+    def validate_config(cls, data: Mapping[str, JsonValue] | None = None) -> object | None:
+        """
+        Validate and return a configuration object for this component.
+        """
+        if data is None:
+            data = {}
+        cfg_cls = cls.config_class()
+        if cfg_cls:
+            return TypeAdapter(cfg_cls).validate_python(data)  # type: ignore
+        elif data:  # pragma: nocover
+            raise RuntimeError(
+                "supplied configuration options but {} has no config class".format(cls.__name__)
+            )
+        else:
+            return None
+
+    @abstractmethod
+    def __call__(self, *args: ..., **kwargs: ...) -> COut:  # pragma: nocover
+        """
+        Run the pipeline's operation and produce a result.  This is the key
+        method for components to implement.
+        """
+        ...
+
+    def __repr__(self) -> str:
+        params = json.dumps(self.dump_config(), indent=4)
+        return f"<{self.__class__.__name__} {params}>"
+
+
+class PlaceholderConfig(BaseModel, extra="allow"):
+    """
+    Configuration for the placeholder component.
+    """
+
+    pass
+
+
+class Placeholder(Component[Any]):
+    """
+    Simple no-op component to use as a placeholder in partial pipelines.
+    """
+
+    config: PlaceholderConfig
+
+    def __call__(self, **kwargs: Any) -> Any:
+        raise NotImplementedError("attempted to invoke placeholder component")
+
+
+def component_inputs[COut](
+    component: Component[COut] | ComponentConstructor[Any, COut] | PipelineFunction[COut],
+    *,
+    warn_on_missing: bool = True,
+    _warn_level: int = 1,
+) -> dict[str, ComponentInput]:
+    if isinstance(component, FunctionType):
+        function = component
+    elif hasattr(component, "__call__"):
+        function = getattr(component, "__call__")
+    else:
+        raise TypeError("invalid component " + repr(component))
+
+    types = _get_types(function)
+    sig = signature(function)
+
+    inputs: dict[str, ComponentInput] = {}
+    for param in sig.parameters.values():
+        ci = ComponentInput(param.name)
+        if param.name == "self":
+            continue
+
+        inputs[param.name] = ci
+
+        if pt := types.get(param.name, None):
+            if get_origin(pt) == Lazy:
+                ci.is_lazy = True
+                (ci.type,) = get_args(pt)
+            else:
+                ci.type = pt
+        elif warn_on_missing:
+            warnings.warn(
+                f"parameter {param.name} of component {component} has no type annotation",
+                TypecheckWarning,
+                stacklevel=_warn_level + 1,
+            )
+
+        if ci.type is None or is_compatible_data(None, ci.type):
+            ci.accepts_none = True
+
+        if param.default is not Parameter.empty:
+            ci.has_default = True
+
+    return inputs
+
+
+def component_return_type[COut](
+    component: Component[COut] | ComponentConstructor[Any, COut] | PipelineFunction[COut],
+) -> type[COut] | None:
+    if isinstance(component, FunctionType):
+        function = component
+    elif hasattr(component, "__call__"):
+        function = getattr(component, "__call__")
+    else:
+        raise TypeError("invalid component " + repr(component))
+
+    types = _get_types(function)
+
+    typ = types.get("return", None)
+    if isinstance(typ, TypeVar):
+        warnings.warn(f"component {component} has unresolved return type", PipelineWarning)
+        return None
+
+    return typ
+
+
+def fallback_on_none[T](primary: T, fallback: Lazy[T]) -> T:
+    """
+    Fallback to a second component if the primary input is `None`.
+
+    Stability:
+        Caller
+    """
+    if primary is not None:
+        return primary
+    else:
+        return fallback.get()
+
+
+def is_component_class(obj: Any) -> bool:
+    """
+    Check if the provided object is a component class.
+    """
+
+    if isinstance(obj, type) and issubclass(obj, Component):
+        return True
+    else:  # pragma: nocover
+        return isinstance(obj, ComponentConstructor)
+
+
+def _get_types(func: Any) -> dict[str, Any]:
+    "Compatibility helper to get type hints"
+    try:
+        return get_type_hints(func)
+    except NameError:
+        warnings.warn(
+            "get_type_hints failed, using fallback (fixed in Python 3.12.5)", RuntimeWarning
+        )
+        return get_annotations(func, eval_str=True)

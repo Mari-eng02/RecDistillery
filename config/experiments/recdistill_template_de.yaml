@@ -1,0 +1,67 @@
+# Template for RecDistill Student Training with Distillation Experts
+train_student:
+  dataset: null  # Will be filled by composer
+  
+  teacher:
+    framework: null
+    model: null  # Will be filled by composer
+    embedding_dim: 200
+    path: null
+    noise:
+      scale: 0.0
+      target: both
+      seed: null
+  
+  student:
+    framework: null
+    backbone: null  # Will be filled by composer
+    model: DE
+    embedding_dim: 20
+    lambda_de: 0.1
+    num_experts: 20
+    temperature: 0.1
+  
+  optimization:
+    epochs: 100
+    batch_size: 2048
+    learning_rate: 0.001
+    l2_reg: 0.0001
+    validation_rate: 10
+    validation_metric: ndcg@20
+    grid_search:
+      enabled: false
+    optuna:
+      enabled: false
+  
+  distillation:
+    strategy: DE
+    temperature: 0.1
+    lambda_de: 0.1
+    num_experts: 20
+  
+  runtime:
+    seed: 42
+    device: null
+    num_workers: 4
+    output_path: results/recdistill/de/citeulike/
+    save_every: 0
+    wandb:
+      enabled: false
+    extra_args: []
+  
+  evaluation:
+    enabled: true
+    k: 20
+    every: 5
+    batch_size: 256
+    val_only: false
+    selection_split: val
+    selection_metric: ndcg
+    assert_no_train_leak: true
+  
+  early_stopping:
+    enabled: true
+    mode: val_metric
+    metric: ndcg
+    patience: 10
+    min_delta: 0.0

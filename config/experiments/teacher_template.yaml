@@ -1,0 +1,35 @@
+# Generic Teacher Training Template
+dataset: null
+
+teacher:
+  framework: null
+  model: null
+  embedding_dim: 200
+  learning_rate: 0.001
+  l2_reg: 0.0001
+  dropout: null
+  num_layers: null
+  mlp_hidden_size: null
+
+optimization:
+  epochs: 10
+  batch_size: 512
+  learning_rate: 0.001
+  l2_reg: 0.0001
+
+runtime:
+  seed: 42
+  device: null
+  num_workers: 0
+  output_path: null
+  save_every: 0
+
+evaluation:
+  enabled: true
+  k: 20
+  every: 2
+  batch_size: 1024
+  val_only: true
+  selection_split: val
+  selection_metric: ndcg
+  assert_no_train_leak: true

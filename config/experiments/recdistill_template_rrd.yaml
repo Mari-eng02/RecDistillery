@@ -1,0 +1,68 @@
+# Template for RecDistill Student Training with RRD
+train_student:
+  dataset: null
+
+  teacher:
+    framework: null
+    model: null
+    embedding_dim: 200
+    path: null
+    noise:
+      scale: 0.0
+      target: both
+      seed: null
+
+  student:
+    framework: null
+    backbone: null
+    model: RRD
+    embedding_dim: 20
+
+  optimization:
+    epochs: 100
+    batch_size: 2048
+    learning_rate: 0.001
+    l2_reg: 0.0001
+    validation_rate: 10
+    validation_metric: ndcg@20
+    grid_search:
+      enabled: false
+    optuna:
+      enabled: false
+
+  distillation:
+    strategy: RRD
+    lambda_rrd: 0.1
+    lambda_de: 0.0
+    rrd:
+      interesting_size: 40
+      uninteresting_size: 50
+      temperature: null
+      teacher_topk: null
+
+  runtime:
+    seed: 42
+    device: null
+    num_workers: 4
+    output_path: null
+    save_every: 0
+    wandb:
+      enabled: false
+    extra_args: []
+
+  evaluation:
+    enabled: true
+    k: 20
+    every: 5
+    batch_size: 256
+    val_only: false
+    selection_split: val
+    selection_metric: ndcg
+    assert_no_train_leak: true
+
+  early_stopping:
+    enabled: true
+    mode: val_metric
+    metric: ndcg
+    patience: 10
+    min_delta: 0.0
