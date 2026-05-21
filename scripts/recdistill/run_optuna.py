@@ -14,6 +14,7 @@ import csv
 import json
 import os
 import random
+import shutil
 import subprocess
 import sys
 import time
@@ -28,7 +29,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from scripts.recdistill.train_student_from_config import build_command
 from recdistill.config_integration import normalize_recdistill_config
-from recdistill.paths import DISTILLED_STUDENT_EXT
+from recdistill.paths import DISTILLED_STUDENT_EXT, distilled_student_artifact_path
 
 try:
     import yaml
@@ -264,6 +265,41 @@ def _default_bayesian_dir(train_conf: dict, *, dataset: str, model: str) -> Path
         / dataset_name
         / "bayesian"
     )
+
+
+def _search_best_output_path(train_conf: dict, *, dataset: str, model: str) -> Path:
+    runtime_conf = train_conf.get("runtime", {}) or {}
+    if runtime_conf.get("output_path"):
+        return Path(runtime_conf["output_path"])
+
+    teacher_conf = train_conf.get("teacher", {}) or {}
+    student_conf = train_conf.get("student", {}) or {}
+    path = distilled_student_artifact_path(
+        distiller=str(student_conf.get("model") or "DE"),
+        teacher_framework=teacher_conf.get("framework"),
+        teacher_model=str(teacher_conf.get("model") or model),
+        student_framework=student_conf.get("framework"),
+        student_model=str(student_conf.get("backbone") or model),
+        dataset=str(dataset),
+        embedding_dim=int(student_conf.get("embedding_dim", 0)),
+        strategy="best",
+    )
+    try:
+        path = path.relative_to(REPO_ROOT)
+    except ValueError:
+        pass
+    if not path.stem.endswith("_best"):
+        path = path.with_name(f"{path.stem}_best{path.suffix}")
+    return path
+
+
+def _copy_artifact_with_history(source_path: Path, destination_path: Path) -> None:
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    destination_path.parent.parent.joinpath("perf").mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, destination_path)
+    source_history = source_path.with_suffix(".history.json")
+    if source_history.exists():
+        shutil.copy2(source_history, destination_path.with_suffix(".history.json"))
 
 
 def _default_search_space() -> dict[str, Any]:
@@ -564,6 +600,14 @@ def main() -> None:
         "best_trial_number": int(best.number),
         "storage": storage,
     }
+    best_trial_output = best.user_attrs.get("output_path")
+    best_trial_output_path = Path(best_trial_output) if best_trial_output else None
+    if best_trial_output_path is not None and best_trial_output_path.exists():
+        best_output_path = _search_best_output_path(base_config, dataset=str(dataset), model=str(backbone))
+        _copy_artifact_with_history(best_trial_output_path, best_output_path)
+        best_summary["best_artifact_path"] = str(best_output_path)
+        best_summary["source_trial_artifact_path"] = str(best_trial_output_path)
+        print(f"Promoted best Optuna artifact: {best_output_path}")
     (output_dir / "best_trial.json").write_text(json.dumps(best_summary, indent=2), encoding="utf-8")
 
     print("\nBest trial summary")

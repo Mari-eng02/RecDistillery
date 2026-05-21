@@ -2,7 +2,7 @@ preset:
   schema_version: 1
   kind: recdistill
   family: generated
-  name: de_recbole_bprmf_recbole_lgcn_citeulike
+  name: de_recbole_BPRMF_recbole_LGCN_citeulike
   generated: true
 config:
   train_student:
@@ -33,7 +33,7 @@ config:
       temperature: 0.1
       num_layers: 2
     optimization:
-      epochs: 100
+      epochs: 10
       batch_size: 2048
       learning_rate: 0.001
       l2_reg: 0.0001
@@ -54,7 +54,7 @@ config:
       seed: 42
       device: null
       num_workers: 4
-      output_path: results/recdistill/de/recbole/BPRMF/recbole/LGCN/citeulike/best/wei/recbole_BPRMF_recbole_LGCN_citeulike_20.distilled_student
+      output_path: results/recdistill/de/recbole/BPRMF/recbole/LGCN/citeulike/fixed/wei/recbole_BPRMF_recbole_LGCN_citeulike_20.distilled_student
       save_every: 0
       gpu: 0
       backend: pytorch

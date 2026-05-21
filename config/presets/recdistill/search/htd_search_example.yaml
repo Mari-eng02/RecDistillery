@@ -1,0 +1,114 @@
+train_student:
+  dataset: citeulike
+
+  teacher:
+    model: NMF
+    embedding_dim: 200
+    path: null
+    framework: elliot
+    format: auto
+    adapter: null
+    user_embeddings_path: null
+    item_embeddings_path: null
+    score_matrix_path: null
+    topk_items_path: null
+    topk_scores_path: null
+
+  student:
+    framework: recbole
+    backbone: NMF
+    model: UNKD
+    embedding_dim: 20
+
+  optimization:
+    epochs: 300
+    batch_size: 2048
+    grid_search:
+      enabled: false
+    optuna:
+      enabled: true
+      n_trials: 30
+      seed: 42
+      study_name: optuna_citeulike_NMF_htd_ndcg_v1
+      storage: sqlite:///optuna_studies.db
+      metric: ndcg
+      search_space:
+        optimization.learning_rate:
+          type: float
+          low: 0.0001
+          high: 0.01
+          log: true
+        optimization.l2_reg:
+          type: float
+          low: 0.000001
+          high: 0.001
+          log: true
+        distillation.topology.lambda_td:
+          type: float
+          low: 0.00001
+          high: 1
+          log: true
+        distillation.topology.alpha:
+          type: float
+          low: 0.1
+          high: 0.9
+        distillation.topology.num_groups:
+          type: categorical
+          choices: [5, 10, 20, 30, 40, 50]
+        distillation.topology.entity_sample_size:
+          type: categorical
+          choices: [128, 256, 512]
+      output_dir: null
+      timeout_sec: null
+      rerun_best_on_test: false
+      test_seeds: "42"
+      keep_training_wandb: true
+      wandb:
+        enabled: false
+        project: repro_distill
+        entity: alberto-mancino-politecnico-di-bari
+        group: optuna/htd/citeulike/NMF
+
+  distillation:
+    strategy: HTD
+    topology:
+      type: HTD
+      lambda_td: 0.001
+      alpha: 0.5
+      num_groups: 40
+      topology_mode: group_pe
+      initial_tau: 1.0
+      min_tau: 1e-10
+      decay_epochs: 100
+      entity_sample_size: 256
+
+  runtime:
+    seed: 42
+    device: null
+    num_workers: 4
+    output_path: results/recdistill/htd/elliot/NMF/recbole/NMF/citeulike/best/wei/elliot_NMF_recbole_NMF_citeulike_20_best.distilled_student
+    save_every: 0
+    extra_args: []
+
+  evaluation:
+    enabled: true
+    every: 5
+    batch_size: 1024
+    simple_metrics:
+    - nDCGRendle2020
+    - Recall
+    - Precision
+    - HR
+    val_only: true
+    selection_split: val
+    selection_metric: ndcg
+    assert_no_train_leak: true
+
+  early_stopping:
+    enabled: true
+    mode: val_metric
+    metric: ndcg
+    patience: 8
+    min_delta: 0.0
+    warmup: 30
+    restore_best: true

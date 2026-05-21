@@ -352,6 +352,7 @@ class ConfigLoader:
                 student_model=student_cfg.backbone,
                 dataset=dataset_name,
                 embedding_dim=student_cfg.embedding_dim,
+                strategy="fixed",
             ).relative_to(Path(__file__).resolve().parents[1])
         ).replace("\\", "/")
         

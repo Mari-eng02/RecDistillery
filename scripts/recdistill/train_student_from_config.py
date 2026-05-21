@@ -13,6 +13,7 @@ import copy
 import csv
 import itertools
 import json
+import shutil
 import shlex
 import subprocess
 import sys
@@ -146,6 +147,45 @@ def _default_results_dir(train_conf: dict, strategy: str) -> Path:
     return Path("results") / "recdistill" / distiller / teacher_framework / teacher / student_framework / student / dataset
 
 
+def _distilled_path_from_train_conf(train_conf: dict, *, strategy: str) -> Path:
+    dataset = str(train_conf.get("dataset", "dataset"))
+    teacher_conf = train_conf.get("teacher", {}) or {}
+    student_conf = train_conf.get("student", {}) or {}
+    path = distilled_student_artifact_path(
+        distiller=str(student_conf.get("model") or "DE"),
+        teacher_framework=teacher_conf.get("framework"),
+        teacher_model=str(teacher_conf.get("model") or "teacher"),
+        student_framework=student_conf.get("framework"),
+        student_model=str(student_conf.get("backbone") or "student"),
+        dataset=dataset,
+        embedding_dim=int(student_conf.get("embedding_dim", 0)),
+        strategy=strategy,
+    )
+    try:
+        return path.relative_to(REPO_ROOT)
+    except ValueError:
+        return path
+
+
+def _search_best_output_path(train_conf: dict) -> Path:
+    runtime_conf = train_conf.get("runtime", {}) or {}
+    if runtime_conf.get("output_path"):
+        return Path(runtime_conf["output_path"])
+    path = _distilled_path_from_train_conf(train_conf, strategy="best")
+    if not path.stem.endswith("_best"):
+        path = path.with_name(f"{path.stem}_best{path.suffix}")
+    return path
+
+
+def _copy_artifact_with_history(source_path: Path, destination_path: Path) -> None:
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    destination_path.parent.parent.joinpath("perf").mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, destination_path)
+    source_history = source_path.with_suffix(".history.json")
+    if source_history.exists():
+        shutil.copy2(source_history, destination_path.with_suffix(".history.json"))
+
+
 def _tracked_results_dir(train_conf: dict, config_path: Path) -> Path:
     distiller, teacher_framework, teacher, student_framework, student, dataset = _experiment_tuple(train_conf)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -247,22 +287,10 @@ def _build_run_config(
     dataset = str(train_conf.get("dataset", "dataset"))
     teacher_model = str(train_conf.get("teacher", {}).get("model", "teacher"))
     student_backbone = str(train_conf.get("student", {}).get("backbone", "student"))
-    teacher_conf = train_conf.get("teacher", {}) or {}
-    student_conf = train_conf.get("student", {}) or {}
-    canonical_output_path = distilled_student_artifact_path(
-        distiller=str(student_conf.get("model") or "DE"),
-        teacher_framework=teacher_conf.get("framework"),
-        teacher_model=str(teacher_conf.get("model") or "teacher"),
-        student_framework=student_conf.get("framework"),
-        student_model=str(student_conf.get("backbone") or "student"),
-        dataset=dataset,
-        embedding_dim=int(student_conf.get("embedding_dim", 0)),
-    )
-    try:
-        canonical_output_path = canonical_output_path.relative_to(REPO_ROOT)
-    except ValueError:
-        pass
+    canonical_output_path = _distilled_path_from_train_conf(train_conf, strategy="fixed")
     default_base_output_dir = canonical_output_path.parent.parent
+    if strategy == "grid":
+        default_base_output_dir = _distilled_path_from_train_conf(train_conf, strategy="grid").parent.parent
     base_output_dir = Path(grid_conf.get("output_dir") or default_base_output_dir)
     if create_dirs:
         base_output_dir.mkdir(parents=True, exist_ok=True)
@@ -868,6 +896,25 @@ def main() -> None:
         return
 
     json_path, tsv_path = _write_recap_files(ranked_records, last_output_dir)
+
+    if strategy == "grid":
+        best_completed = next(
+            (
+                row
+                for row in ranked_records
+                if row.get("status") == "completed" and row.get("final_checkpoint_path")
+            ),
+            None,
+        )
+        if best_completed is not None:
+            source_path = Path(best_completed["final_checkpoint_path"])
+            best_output_path = _search_best_output_path(train_conf)
+            if source_path.exists():
+                _copy_artifact_with_history(source_path, best_output_path)
+                best_completed["promoted_best_checkpoint_path"] = str(best_output_path)
+                best_meta_path = best_output_path.parent.parent / "perf" / "best_grid_run.json"
+                best_meta_path.write_text(json.dumps(best_completed, indent=2, ensure_ascii=False), encoding="utf-8")
+                print(f"Promoted best grid artifact: {best_output_path}")
 
     print(f"{strategy.capitalize()} run recap:")
     for row in ranked_records[: min(10, len(ranked_records))]:
