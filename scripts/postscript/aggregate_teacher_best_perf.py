@@ -2,7 +2,7 @@
 Aggregate teacher performance files into one TSV.
 
 Default input pattern:
-    results/<dataset>/teacher/<framework>/<teacher>/best/perf/*.tsv
+    results/teachers/<framework>/<teacher>/<dataset>/best/perf/*.tsv
 
 Output:
     A single TSV with one row per recommender row found in each performance TSV.
@@ -71,14 +71,21 @@ def load_best_json_meta(perf_dir: Path) -> dict[str, str]:
 def extract_context(tsv_path: Path, results_root: Path) -> dict[str, str]:
     rel = tsv_path.relative_to(results_root)
     parts = rel.parts
-    # Current layout: <dataset>/teacher/<framework>/<teacher>/<phase>/perf/<file>
-    # Older layout:   <dataset>/teacher/<teacher>/<phase>/perf/<file>
-    dataset = parts[0] if len(parts) > 0 else ""
-    if len(parts) >= 7 and parts[1] == "teacher" and parts[5] == "perf":
+    # Current layout: teachers/<framework>/<teacher>/<dataset>/<phase>/perf/<file>
+    if len(parts) >= 7 and parts[0] == "teachers" and parts[5] == "perf":
+        dataset = parts[3]
+        framework = parts[1]
+        teacher = parts[2]
+        phase = parts[4]
+    # Legacy layout: <dataset>/teacher/<framework>/<teacher>/<phase>/perf/<file>
+    # Older layout:  <dataset>/teacher/<teacher>/<phase>/perf/<file>
+    elif len(parts) >= 7 and parts[1] == "teacher" and parts[5] == "perf":
+        dataset = parts[0]
         framework = parts[2]
         teacher = parts[3]
         phase = parts[4]
     else:
+        dataset = parts[0] if len(parts) > 0 else ""
         framework = ""
         teacher = parts[2] if len(parts) > 2 else ""
         phase = parts[3] if len(parts) > 3 else ""
@@ -115,6 +122,7 @@ def read_perf_rows(tsv_path: Path) -> list[dict[str, str]]:
 def aggregate(results_root: Path) -> list[dict[str, str]]:
     all_rows: list[dict[str, str]] = []
     patterns = [
+        "teachers/*/*/*/best/perf/*.tsv",
         "*/teacher/*/*/best/perf/*.tsv",
         "*/teacher/*/best/perf/*.tsv",
     ]

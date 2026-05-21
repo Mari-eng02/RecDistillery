@@ -35,7 +35,7 @@ export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 
 python3 scripts/recdistill/teacher_smoke.py \
   --teacher-framework "${FRAMEWORK}" \
-  --model "${MODEL}" \
+  --teacher-model "${MODEL}" \
   --dataset "${DATASET}" \
   --embedding-dim "${EMBEDDING_DIM}" \
   --top-k "${TOP_K}"

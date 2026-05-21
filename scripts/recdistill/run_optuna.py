@@ -229,21 +229,41 @@ def _safe_slug(value: str, max_len: int = 80) -> str:
     return cleaned[:max_len] if len(cleaned) > max_len else cleaned
 
 
-def _experiment_tuple(train_conf: dict, *, dataset: str, model: str) -> tuple[str, str, str, str]:
+def _experiment_tuple(train_conf: dict, *, dataset: str, model: str) -> tuple[str, str, str, str, str, str]:
+    teacher_conf = train_conf.get("teacher", {}) or {}
     student_conf = train_conf.get("student", {}) or {}
     distiller = str(student_conf.get("model") or "DE")
+    teacher_framework = str(teacher_conf.get("framework") or "recbole")
+    teacher = str(teacher_conf.get("model") or model)
+    student_framework = str(student_conf.get("framework") or "recbole")
     student = str(student_conf.get("backbone") or model)
     return (
         _safe_slug(distiller.lower()),
-        _safe_slug(model.lower()),
-        _safe_slug(student.lower()),
+        _safe_slug(teacher_framework.lower()),
+        _safe_slug(teacher),
+        _safe_slug(student_framework.lower()),
+        _safe_slug(student),
         _safe_slug(dataset.lower()),
     )
 
 
 def _default_bayesian_dir(train_conf: dict, *, dataset: str, model: str) -> Path:
-    distiller, teacher_name, student_name, dataset_name = _experiment_tuple(train_conf, dataset=dataset, model=model)
-    return Path("results") / "recdistill" / distiller / teacher_name / student_name / dataset_name / "bayesian"
+    distiller, teacher_framework, teacher_name, student_framework, student_name, dataset_name = _experiment_tuple(
+        train_conf,
+        dataset=dataset,
+        model=model,
+    )
+    return (
+        Path("results")
+        / "recdistill"
+        / distiller
+        / teacher_framework
+        / teacher_name
+        / student_framework
+        / student_name
+        / dataset_name
+        / "bayesian"
+    )
 
 
 def _default_search_space() -> dict[str, Any]:
@@ -394,8 +414,9 @@ def main() -> None:
         model=str(backbone),
     )
     output_dir.mkdir(parents=True, exist_ok=True)
-    checkpoints_dir = output_dir / "checkpoints"
-    checkpoints_dir.mkdir(parents=True, exist_ok=True)
+    wei_dir = output_dir / "wei"
+    wei_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "perf").mkdir(parents=True, exist_ok=True)
 
     try:
         import optuna
@@ -418,7 +439,7 @@ def main() -> None:
         trial_seed = seed + int(trial.number)
         sampled_params = _sample_hparams(trial, search_space=search_space)
 
-        output_path = checkpoints_dir / f"trial_{trial.number:05d}{DISTILLED_STUDENT_EXT}"
+        output_path = wei_dir / f"trial_{trial.number:05d}{DISTILLED_STUDENT_EXT}"
         trial_config = _prepare_trial_config(
             base_config=base_config,
             dataset=dataset,
@@ -560,7 +581,10 @@ def main() -> None:
     test_seeds = _parse_seed_list(str(test_seeds_raw))
     rerun_records: list[dict[str, Any]] = []
     for test_seed in test_seeds:
-        run_output_path = output_dir / "best_rerun" / f"seed_{test_seed}{DISTILLED_STUDENT_EXT}"
+        rerun_dir = output_dir / "best_rerun"
+        (rerun_dir / "wei").mkdir(parents=True, exist_ok=True)
+        (rerun_dir / "perf").mkdir(parents=True, exist_ok=True)
+        run_output_path = rerun_dir / "wei" / f"seed_{test_seed}{DISTILLED_STUDENT_EXT}"
         trial_config = _prepare_trial_config(
             base_config=base_config,
             dataset=dataset,

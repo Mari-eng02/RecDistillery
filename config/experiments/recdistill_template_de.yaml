@@ -43,7 +43,7 @@ train_student:
     seed: 42
     device: null
     num_workers: 4
-    output_path: results/recdistill/de/citeulike/
+    output_path: null
     save_every: 0
     wandb:
       enabled: false

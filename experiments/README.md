@@ -8,6 +8,10 @@ Shell launchers are grouped by the pipeline they belong to.
 Run the scripts from the repository root, for example:
 
 ```bash
-bash experiments/recdistill/train_distiller.sh DE citeulike BPRMF
-bash experiments/baseline/teacher_training.sh BPRMF citeulike 0 best
+bash experiments/recdistill/train_distiller.sh DE citeulike recbole BPRMF recbole LGCN 0 0
+bash experiments/baseline/teacher_training.sh recbole BPRMF citeulike 0 best
 ```
+
+The RecDistill launchers expose both teacher and student frameworks explicitly:
+`recbole`, `elliot`, and `lenskit` are accepted when a matching config exists
+under `config/models/{teacher,student}/<framework>/`.

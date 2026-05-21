@@ -35,6 +35,8 @@ class RecDistillExperimentRunner:
             resolve_student_checkpoint_from_args(args, distiller_name=self.resolve_distiller_name())
         )
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
+        strategy_dir = self.output_path.parent.parent if self.output_path.parent.name == "wei" else self.output_path.parent
+        (strategy_dir / "perf").mkdir(parents=True, exist_ok=True)
 
         self.teacher_state = None
         self.dataset = None
@@ -271,7 +273,8 @@ class RecDistillExperimentRunner:
         history: list[dict[str, float | int]] = []
         best_score = float("-inf")
         best_epoch = 0
-        best_checkpoint = self.output_path.with_name(f"{self.output_path.stem}.best{DISTILLED_STUDENT_EXT}")
+        best_checkpoint = self.output_path
+        saved_best_checkpoint = False
         early_best_value: float | None = None
         early_best_epoch = 0
         early_bad_steps = 0
@@ -315,6 +318,7 @@ class RecDistillExperimentRunner:
                         best_score = selected_score
                         best_epoch = epoch
                         self._save_checkpoint(best_checkpoint, epoch, history + [row], best_epoch, best_score)
+                        saved_best_checkpoint = True
 
                 history.append(row)
                 if self.wandb_logger is not None:
@@ -384,7 +388,10 @@ class RecDistillExperimentRunner:
             )
 
         history_path = self.output_path.with_suffix(".history.json")
-        if caught_exception is None:
+        should_save_final = caught_exception is None and (
+            not saved_best_checkpoint or (args.early_stop and args.early_stop_restore_best and early_best_epoch > 0)
+        )
+        if should_save_final:
             final_epoch = int(history[-1]["epoch"]) if history else 0
             self._save_checkpoint(
                 self.output_path,
@@ -401,6 +408,7 @@ class RecDistillExperimentRunner:
                     "final_test_eval": final_test_eval,
                 },
             )
+        if caught_exception is None:
             history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
 
         end_payload = {
@@ -666,6 +674,7 @@ def runner_args_from_config(config: RecDistillConfig) -> SimpleNamespace:
         device=runtime.device,
         num_workers=runtime.num_workers,
         output_path=runtime.output_path,
+        output_strategy=getattr(runtime, "output_strategy", "best"),
         save_every=runtime.save_every,
         skip_eval=not evaluation.enabled,
         eval_k=evaluation.k,

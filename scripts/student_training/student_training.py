@@ -15,9 +15,7 @@ from recdistill.config_integration import (
 from recdistill.experiment_runner import RecDistillExperimentRunner
 from recdistill.native_runner import (
     NativeModelTrainingRunner,
-    native_args_to_config,
     native_args_from_config_file,
-    native_args_from_model_config,
 )
 from recdistill.paths import AMAZONCD, BOOKCROSSING, BPRMF, CITEULIKE, LGCN, NMF
 from recdistill.model_validation import validate_distillation_request, validate_trainable_model
@@ -27,7 +25,7 @@ from recdistill.training import set_seed
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a native RecDistill student.")
     parser.add_argument("--backbone", type=str, default=BPRMF, help="Student recommendation backbone")
-    parser.add_argument("--framework", type=str, default="recbole", choices=["recbole", "elliot", "lenskit"])
+    parser.add_argument("--framework", type=str, default=None, choices=["recbole", "elliot", "lenskit"])
     parser.add_argument("--dataset", type=str, default=CITEULIKE, help="Dataset name")
     parser.add_argument("--config", type=str, default=None, help="Optional native YAML/JSON config")
     parser.add_argument(
@@ -37,7 +35,7 @@ if __name__ == "__main__":
         help="Distillation strategy. Use 'none' for plain student training.",
     )
     parser.add_argument("--teacher_model", type=str, default=None, help="Teacher model for distillation")
-    parser.add_argument("--teacher-framework", type=str, default="recbole", choices=["recbole", "elliot", "lenskit"])
+    parser.add_argument("--teacher-framework", type=str, default=None, choices=["recbole", "elliot", "lenskit"])
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--learning-rate", type=float, default=None)
@@ -51,16 +49,20 @@ if __name__ == "__main__":
     args = parser.parse_args()
     backbones = [BPRMF, "LINE", LGCN, "NGCF", "DGCF", "SGL", "SPECTRALCF", NMF]
     datasets = [CITEULIKE, BOOKCROSSING, AMAZONCD]
-    try:
-        args.backbone = validate_trainable_model(args.framework, args.backbone, role="student backbone")
-        if args.teacher_model is not None:
-            args.teacher_model = validate_trainable_model(args.teacher_framework, args.teacher_model, role="teacher model")
-        assert args.backbone in backbones, f"Invalid backbone: {args.backbone}. Choose from {backbones}"
-        assert args.dataset in datasets, f"Invalid dataset: {args.dataset}. Choose from {datasets}"
-    except (AssertionError, ValueError) as exc:
-        parser.error(str(exc))
-
     distillation = str(args.distillation).strip().lower()
+    is_plain = distillation in {"none", "plain", "no", "false", "0"}
+    if not args.config:
+        args.framework = args.framework or "recbole"
+        args.teacher_framework = args.teacher_framework or "recbole"
+        try:
+            args.backbone = validate_trainable_model(args.framework, args.backbone, role="student backbone")
+            if args.teacher_model is not None:
+                args.teacher_model = validate_trainable_model(args.teacher_framework, args.teacher_model, role="teacher model")
+            assert args.backbone in backbones, f"Invalid backbone: {args.backbone}. Choose from {backbones}"
+            assert args.dataset in datasets, f"Invalid dataset: {args.dataset}. Choose from {datasets}"
+        except (AssertionError, ValueError) as exc:
+            parser.error(str(exc))
+
     overrides = {
         "epochs": args.epochs,
         "batch_size": args.batch_size,
@@ -74,7 +76,7 @@ if __name__ == "__main__":
         "skip_eval": True if args.skip_eval else None,
     }
 
-    if distillation in {"none", "plain", "no", "false", "0"}:
+    if is_plain:
         if args.config:
             train_args = native_args_from_config_file(
                 args.config,
@@ -85,21 +87,39 @@ if __name__ == "__main__":
             )
             try:
                 train_args.backbone = validate_trainable_model(train_args.framework, train_args.backbone, role="student backbone")
-            except ValueError as exc:
+                assert train_args.backbone in backbones, f"Invalid backbone: {train_args.backbone}. Choose from {backbones}"
+                assert train_args.dataset in datasets, f"Invalid dataset: {train_args.dataset}. Choose from {datasets}"
+            except (AssertionError, ValueError) as exc:
                 parser.error(str(exc))
         else:
-            train_args = native_args_from_model_config(
-                role="student",
-                dataset=args.dataset,
-                backbone=args.backbone,
-                overrides=overrides,
+            loader = get_config_loader()
+            composed_config = loader.compose_student_training(
+                dataset_name=args.dataset,
+                model_name=args.backbone,
+                framework=args.framework,
             )
-            preset_path = get_config_loader().save_generated_preset(
+            preset_path = loader.save_generated_preset(
                 kind="student",
                 family="generated",
-                name=f"{train_args.framework}_{train_args.backbone}_{train_args.dataset}_{train_args.embedding_dim}",
-                path_parts=[train_args.framework, train_args.backbone, train_args.dataset],
-                config=native_args_to_config(train_args),
+                name=(
+                    f"{composed_config['student']['framework']}_"
+                    f"{composed_config['student']['backbone']}_"
+                    f"{composed_config['dataset']}_"
+                    f"{composed_config['student']['embedding_dim']}"
+                ),
+                path_parts=[
+                    composed_config["student"]["framework"],
+                    composed_config["student"]["backbone"],
+                    composed_config["dataset"],
+                ],
+                config=composed_config,
+            )
+            train_args = native_args_from_config_file(
+                preset_path,
+                role="student",
+                fallback_dataset=args.dataset,
+                fallback_backbone=args.backbone,
+                overrides=overrides,
             )
             print(f"Generated student config saved to: {preset_path}")
         NativeModelTrainingRunner(train_args).run()
@@ -147,7 +167,8 @@ if __name__ == "__main__":
             print(f"Generated RecDistill config saved to: {preset_path}")
         if args.output_path is not None:
             config.train_student.runtime.output_path = args.output_path
-        config.train_student.student.framework = args.framework
+        if args.framework is not None:
+            config.train_student.student.framework = args.framework
         if args.skip_eval:
             config.train_student.evaluation.enabled = False
         set_seed(int(config.train_student.runtime.seed))

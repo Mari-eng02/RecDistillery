@@ -60,7 +60,8 @@ for dataset in "${DATASETS[@]}"; do
     cmd=(
       python3 scripts/recdistill/evaluate_teacher.py
       --dataset "${dataset}"
-      --model "${model}"
+      --teacher-framework recbole
+      --teacher-model "${model}"
       --embedding-dim "${EMBEDDING_DIM}"
       --top-k "${TOP_K}"
       --batch-size "${BATCH_SIZE}"

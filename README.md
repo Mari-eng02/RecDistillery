@@ -44,6 +44,7 @@ The dataset preprocessing and standardized data management are based on `DataRec
   - [Download and Prepare Datasets](#download-and-prepare-datasets)
 - [Workflow](#workflow)
   - [Compatibility Check](#compatibility-check)
+  - [Adding New Model Adapters](#adding-new-model-adapters)
   - [Teacher Import](#teacher-import)
   - [Teacher Training](#teacher-training)
   - [Student Training](#student-training)
@@ -178,6 +179,41 @@ python scripts/recdistill/welcome.py
 
 Non-Torch teachers can still be used after conversion to `.teacher` with `import_teacher.py`.
 
+## Adding New Model Adapters
+
+If a model appears in the imported framework definitions but is not listed as adapter-backed, RecDistill cannot train it in the unified PyTorch loop yet. To make it trainable, add a backbone adapter.
+
+1. Add or extend the framework adapter in `recdistill/framework_backbone.py`.
+   The adapter must be a `torch.nn.Module` and expose the same surface used by the distillers:
+
+```python
+forward(users, pos_items, neg_items) -> FrameworkBatchOutput
+score_items(users, items) -> torch.Tensor
+user_embeddings() -> torch.Tensor
+item_embeddings() -> torch.Tensor
+```
+
+2. Wire the model inside the relevant adapter class:
+   `RecBoleBackboneAdapter`, `ElliotBackboneAdapter`, or `LensKitBackboneAdapter`.
+
+3. Register the model as trainable in `recdistill/supported_models.py` by adding a `TrainableBackbone` entry with framework, canonical model name, aliases, adapter name, and implementation path.
+
+4. Add the model alias in `recdistill/registry.py` if the model should be resolved from multiple names.
+
+5. Add model configs for teacher and/or student:
+
+```text
+config/models/teacher/<framework>/<model>.yaml
+config/models/student/<framework>/<model>.yaml
+```
+
+6. Run the compatibility check again:
+
+```bash
+python scripts/recdistill/welcome.py --verbose
+```
+
+
 ## Teacher Import
 
 RecDistillery treats the `.teacher` file as the framework-neutral teacher format. The teacher can come from any recommender framework as long as it can be adapted to user/item embeddings, precomputed scores, or precomputed top-k rankings.
@@ -190,7 +226,8 @@ For example, to import a teacher trained by Elliot and already saved as `.teache
 python scripts/recdistill/import_teacher.py \
   --input path/to/elliot_teacher.teacher \
   --framework elliot \
-  --output results/teachers/imported_elliot_teacher.teacher
+  --model-name BPRMF \
+  --dataset citeulike
 ```
 
 For example, to import an external teacher from NumPy embeddings run:
@@ -199,8 +236,9 @@ For example, to import an external teacher from NumPy embeddings run:
 python scripts/recdistill/import_teacher.py \
   --input path/to/teacher_embeddings.npz \
   --format embeddings_npz \
+  --framework external \
   --model-name ExternalTeacher \
-  --output results/teachers/external_teacher.teacher
+  --dataset citeulike
 ```
 
 Then reference it from a RecDistill config:
@@ -209,8 +247,14 @@ Then reference it from a RecDistill config:
 train_student:
   teacher:
     model: ExternalTeacher
-    path: results/teachers/external_teacher.teacher
+    path: results/teachers/external/ExternalTeacher/citeulike/wei/external_ExternalTeacher_citeulike_200.teacher
     format: recdistill_teacher
+```
+
+Imported teachers are always saved with the canonical teacher layout:
+
+```text
+results/teachers/<framework>/<model>/<dataset>/wei/<framework>_<model>_<dataset>_<embedding_dim>.teacher
 ```
 
 
@@ -260,7 +304,7 @@ python scripts/student_training/student_training.py \
   --config config/presets/student/<framework>/<backbone>/<dataset>/<preset>.yaml
 ```
 
-The output is a `.student` checkpoint artifact that can be evaluated or later compared with distilled students.
+The output is a `.student` artifact that can be evaluated or later compared with distilled students.
 
 ## Student Distillation
 
@@ -274,14 +318,28 @@ Example config-driven distillation:
 ```bash
 python scripts/recdistill/train_student_from_config.py \
   --dataset citeulike \
-  --teacher BPRMF \
+  --teacher-model BPRMF \
   --teacher-framework recbole \
   --distiller de \
-  --student LGCN \
+  --student-backbone LGCN \
   --student-framework recbole
 ```
 
-Straight student training produces `.student` artifacts, while distilled student training produces `.distilled_student` artifacts. Both are PyTorch checkpoint payloads containing model state, config, metadata, and history.
+Direct distillation from CLI uses the same canonical teacher/student argument names:
+
+```bash
+python scripts/recdistill/train_student.py \
+  --dataset citeulike \
+  --teacher-framework recbole \
+  --teacher-model BPRMF \
+  --teacher-embedding-dim 200 \
+  --student-framework recbole \
+  --student-backbone LGCN \
+  --student-embedding-dim 20 \
+  --lambda-de 0.1
+```
+
+Straight student training produces `.student` artifacts, while distilled student training produces `.distilled_student` artifacts. Both are PyTorch artifact payloads containing model state, config, metadata, and history.
 
 ## Experiment Launchers
 
@@ -292,17 +350,24 @@ experiments/recdistill/      RecDistill launchers
 experiments/baseline/        Teacher and baseline student launchers
 ```
 
-RecDistill examples: SISTEMARE PARAMETRI CLI
+RecDistill examples:
 
 ```bash
-bash experiments/recdistill/train_distiller.sh <distiller> <dataset> [model|ALL] [gpu] [dry_run]
-bash experiments/recdistill/train_single_distiller.sh <distiller> <dataset> <teacher> [student|SAME] [gpu] [dry_run]
+bash experiments/recdistill/train_distiller.sh <distiller> <dataset> [teacher_framework] [teacher_model|ALL] [student_framework] [student_backbone|SAME|ALL] [gpu] [dry_run]
+bash experiments/recdistill/train_single_distiller.sh <distiller> <dataset> <teacher_framework> <teacher_model> [student_framework] [student_backbone|SAME] [gpu] [dry_run]
+```
+
+Examples:
+
+```bash
+bash experiments/recdistill/train_distiller.sh DE citeulike recbole BPRMF recbole LGCN 0 0
+bash experiments/recdistill/train_distiller.sh DE citeulike lenskit ALL lenskit SAME auto 1
 ```
 
 Baseline example:
 
 ```bash
-bash experiments/baseline/teacher_training.sh <model> <dataset> [gpu] [grid|best]
+bash experiments/baseline/teacher_training.sh [teacher_framework] [teacher_model] <dataset> [gpu] [grid|best]
 ```
 
 ---
@@ -341,12 +406,49 @@ config/presets/recdistill/generated/
 # Evaluation
 
 The evaluation in RecDistillery is done as a top-k ranking, typically @20. 
-During student training, the pipeline calculates the top-k recommendations, compares them with the validation/test ground truth, calculates precision, recall, ndcg, and hr and finally saves the best checkpoint using val.ndcg as selection metric.
+During student training, the pipeline calculates the top-k recommendations, compares them with the validation/test ground truth, calculates precision, recall, ndcg, and hr and finally saves the best artifact using val.ndcg as selection metric.
 
 The formulas are implemented here: `recdistill/evaluation.py`.
 Then the metrics are averaged across evaluable users.
 
 Run `scripts/recdistill/evaluate_teacher.py` to evaluate `.teacher` artifacts and `scripts/recdistill/evaluate_students.py` to evaluate `.student` or `.distilled_student` artifacts. Both scripts produce separate JSON/TSV files.
+
+Teacher evaluation example:
+
+```bash
+python scripts/recdistill/evaluate_teacher.py \
+  --dataset citeulike \
+  --framework recbole \
+  --model BPRMF \
+  --embedding-dim 200 \
+  --top-k 20
+```
+
+Plain student evaluation example:
+
+```bash
+python scripts/recdistill/evaluate_students.py \
+  --dataset citeulike \
+  --distiller plain \
+  --student-framework recbole \
+  --student-backbone LGCN \
+  --student-embedding-dim 20 \
+  --top-k 20
+```
+
+Distilled student evaluation example:
+
+```bash
+python scripts/recdistill/evaluate_students.py \
+  --dataset citeulike \
+  --distiller de \
+  --teacher-framework recbole \
+  --teacher-model BPRMF \
+  --student-framework recbole \
+  --student-backbone LGCN \
+  --student-embedding-dim 20 \
+  --top-k 20
+```
 
 ---
 
@@ -354,9 +456,25 @@ Run `scripts/recdistill/evaluate_teacher.py` to evaluate `.teacher` artifacts an
 
 The setup script creates the base runtime directories used by the pipeline, including `results/`, and `data/`.
 
-Outputs under `results/teacher/` and `results/student/` are reserved for teacher and non-distilled student models trained with the RecDistill training scripts.
+Teacher artifacts are saved under:
 
-All outputs that involve distillation are stored under `results/recdistill/`.
+```text
+results/teachers/<framework>/<model>/<dataset>/best/wei/<framework>_<model>_<dataset>_<embedding_dim>.teacher
+```
+
+Plain student artifacts are saved under:
+
+```text
+results/students/<framework>/<model>/<dataset>/best/wei/<framework>_<model>_<dataset>_<embedding_dim>.student
+```
+
+Distilled student artifacts are saved under:
+
+```text
+results/recdistill/<distiller>/<teacher_framework>/<teacher_model>/<student_framework>/<student_model>/<dataset>/<strategy>/wei/<teacher_framework>_<teacher_model>_<student_framework>_<student_model>_<dataset>_<student_embedding_dim>.distilled_student
+```
+
+For teacher, plain-student, and RecDistill runs, artifacts go under `wei/` and evaluation metrics go under the sibling `perf/` directory.
 
 ---
 
@@ -417,5 +535,7 @@ python3 scripts/recdistill/train_student_from_config.py \
 ```text
 results/recdistill/<distiller>/<teacher_framework>/<teacher_model>/<student_framework>/<student_model>/<dataset>/tracked/<run_id>/
 ```
+
+Each tracked run directory contains `wei/` and `perf/`.
 
 ---

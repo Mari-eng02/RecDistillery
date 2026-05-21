@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from recdistill.registry import distiller_slug, model_slug
+from recdistill.registry import canonical_model_name, distiller_slug, model_slug
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -70,6 +70,105 @@ def _relative_or_absolute(path: str | Path) -> Path:
     return path if path.is_absolute() else REPO_ROOT / path
 
 
+def _framework_slug(framework: str | None, default: str = "recbole") -> str:
+    raw = str(framework or default).strip().lower()
+    return default if raw in {"", "auto"} else raw
+
+
+def _dataset_slug(dataset: str) -> str:
+    return str(dataset).strip().lower()
+
+
+def _model_label(model: str) -> str:
+    raw = str(model).strip()
+    try:
+        return canonical_model_name(raw)
+    except ValueError:
+        cleaned = raw.replace(" ", "_").replace("/", "_").replace("\\", "_")
+        if not cleaned:
+            raise ValueError("Model name cannot be empty.")
+        return cleaned
+
+
+def teacher_artifact_path(
+    *,
+    framework: str | None,
+    model: str,
+    dataset: str,
+    embedding_dim: int,
+) -> Path:
+    framework_slug = _framework_slug(framework)
+    model_name = _model_label(model)
+    dataset_slug = _dataset_slug(dataset)
+    file_name = f"{framework_slug}_{model_name}_{dataset_slug}_{int(embedding_dim)}{TEACHER_EXT}"
+    return RESULTS_ROOT / "teachers" / framework_slug / model_name / dataset_slug / "best" / "wei" / file_name
+
+
+def imported_teacher_artifact_path(
+    *,
+    framework: str | None,
+    model: str,
+    dataset: str,
+    embedding_dim: int,
+) -> Path:
+    framework_slug = _framework_slug(framework)
+    model_name = _model_label(model)
+    dataset_slug = _dataset_slug(dataset)
+    file_name = f"{framework_slug}_{model_name}_{dataset_slug}_{int(embedding_dim)}{TEACHER_EXT}"
+    return RESULTS_ROOT / "teachers" / framework_slug / model_name / dataset_slug / "wei" / file_name
+
+
+def student_artifact_path(
+    *,
+    framework: str | None,
+    model: str,
+    dataset: str,
+    embedding_dim: int,
+) -> Path:
+    framework_slug = _framework_slug(framework)
+    model_name = _model_label(model)
+    dataset_slug = _dataset_slug(dataset)
+    file_name = f"{framework_slug}_{model_name}_{dataset_slug}_{int(embedding_dim)}{STUDENT_EXT}"
+    return RESULTS_ROOT / "students" / framework_slug / model_name / dataset_slug / "best" / "wei" / file_name
+
+
+def distilled_student_artifact_path(
+    *,
+    distiller: str,
+    teacher_framework: str | None,
+    teacher_model: str,
+    student_framework: str | None,
+    student_model: str,
+    dataset: str,
+    embedding_dim: int,
+    strategy: str = "best",
+) -> Path:
+    distiller_name = distiller_slug(distiller)
+    teacher_framework_slug = _framework_slug(teacher_framework)
+    student_framework_slug = _framework_slug(student_framework)
+    teacher_model_name = _model_label(teacher_model)
+    student_model_name = _model_label(student_model)
+    dataset_slug = _dataset_slug(dataset)
+    file_name = (
+        f"{teacher_framework_slug}_{teacher_model_name}_"
+        f"{student_framework_slug}_{student_model_name}_"
+        f"{dataset_slug}_{int(embedding_dim)}{DISTILLED_STUDENT_EXT}"
+    )
+    return (
+        RESULTS_ROOT
+        / "recdistill"
+        / distiller_name
+        / teacher_framework_slug
+        / teacher_model_name
+        / student_framework_slug
+        / student_model_name
+        / dataset_slug
+        / str(strategy).strip().lower()
+        / "wei"
+        / file_name
+    )
+
+
 def resolve_teacher_checkpoint(
     *,
     dataset: str,
@@ -85,16 +184,19 @@ def resolve_teacher_checkpoint(
         raise ValueError(
             "When teacher_path is not set, both teacher_model and teacher_embedding_dim are required."
         )
-    model = model_slug(teacher_model).upper()
-    dataset_slug = str(dataset).lower()
-    base = RESULTS_ROOT / dataset_slug / "teacher"
-    framework_slug = str(teacher_framework).strip().lower() if teacher_framework else ""
-    if framework_slug:
-        base = base / framework_slug
-        file_name = f"{framework_slug}_{model}_{dataset_slug}_{int(teacher_embedding_dim)}{TEACHER_EXT}"
-    else:
-        file_name = f"{model}_{dataset_slug}_{int(teacher_embedding_dim)}{TEACHER_EXT}"
-    return base / model / "best" / "wei" / file_name
+    trained_path = teacher_artifact_path(
+        framework=teacher_framework,
+        model=teacher_model,
+        dataset=dataset,
+        embedding_dim=teacher_embedding_dim,
+    )
+    imported_path = imported_teacher_artifact_path(
+        framework=teacher_framework,
+        model=teacher_model,
+        dataset=dataset,
+        embedding_dim=teacher_embedding_dim,
+    )
+    return imported_path if imported_path.exists() else trained_path
 
 
 def resolve_student_checkpoint(
@@ -103,36 +205,38 @@ def resolve_student_checkpoint(
     distiller: str,
     teacher_model: str | None,
     student_backbone: str | None,
-    student_framework: str | None = None,
     student_embedding_dim: int,
+    teacher_framework: str | None = None,
+    student_framework: str | None = None,
     output_path: str | Path | None = None,
+    strategy: str = "best",
 ) -> Path:
     if output_path is not None:
         return Path(output_path)
 
     raw_distiller = str(distiller).strip().lower()
     is_plain = raw_distiller in {"none", "plain", "no", "false", "0"}
-    teacher_slug = model_slug(teacher_model) if teacher_model is not None else "teacher"
-    student_slug = model_slug(student_backbone) if student_backbone is not None else "student"
-    distiller_name = "plain" if is_plain else distiller_slug(distiller)
-    dataset_slug = str(dataset).lower()
-    framework_slug = str(student_framework).strip().lower() if student_framework else ""
-    extension = STUDENT_EXT if is_plain else DISTILLED_STUDENT_EXT
-    file_name = (
-        f"{framework_slug}_{student_slug}_{dataset_slug}_{int(student_embedding_dim)}{extension}"
-        if framework_slug
-        else f"{student_slug}_{dataset_slug}_{int(student_embedding_dim)}{extension}"
-    )
-    return (
-        RESULTS_ROOT
-        / "recdistill"
-        / distiller_name
-        / teacher_slug
-        / student_slug
-        / dataset_slug
-        / "fixed"
-        / "checkpoints"
-        / file_name
+    if is_plain:
+        if student_backbone is None:
+            raise ValueError("student_backbone is required for plain student path resolution.")
+        return student_artifact_path(
+            framework=student_framework,
+            model=student_backbone,
+            dataset=dataset,
+            embedding_dim=student_embedding_dim,
+        )
+
+    if teacher_model is None or student_backbone is None:
+        raise ValueError("teacher_model and student_backbone are required for distilled student path resolution.")
+    return distilled_student_artifact_path(
+        distiller=distiller,
+        teacher_framework=teacher_framework,
+        teacher_model=teacher_model,
+        student_framework=student_framework,
+        student_model=student_backbone,
+        dataset=dataset,
+        embedding_dim=student_embedding_dim,
+        strategy=strategy,
     )
 
 
@@ -183,7 +287,7 @@ def performance_path(
     distiller: str,
     teacher_model: str | None,
     student_backbone: str | None = None,
-    phase: str = "fixed",
+    phase: str = "best",
     filename: str = "metrics.json",
 ) -> Path:
     teacher_slug = model_slug(teacher_model) if teacher_model is not None else "teacher"
@@ -209,16 +313,12 @@ def teacher_weights_path(
     framework: str | None = None,
 ) -> str:
     """Compatibility helper for legacy scripts, backed by the framework path module."""
-    model_name = model_slug(model).upper()
-    dataset_slug = str(dataset).lower()
-    base = RESULTS_ROOT / dataset_slug / "teacher"
-    framework_slug = str(framework).strip().lower() if framework else ""
-    if framework_slug:
-        base = base / framework_slug
-        file_name = f"{framework_slug}_{model_name}_{dataset_slug}_{int(embedding_dim)}{TEACHER_EXT}"
-    else:
-        file_name = f"{model_name}_{dataset_slug}_{int(embedding_dim)}{TEACHER_EXT}"
-    path = base / model_name / phase / "wei" / file_name
+    path = teacher_artifact_path(
+        framework=framework,
+        model=model,
+        dataset=dataset,
+        embedding_dim=embedding_dim,
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     return str(path)
 
@@ -228,24 +328,19 @@ def student_weights_path(
     teacher: str,
     dataset: str,
     embedding_dim: int,
-    phase: str = "fixed",
+    phase: str = "best",
     student: str | None = None,
 ) -> str:
     """Compatibility helper for exported distilled student payloads."""
-    distiller_name = distiller_slug(distiller)
-    teacher_name = model_slug(teacher).upper()
-    student_name = model_slug(student or teacher).upper()
-    dataset_slug = str(dataset).lower()
-    path = (
-        RESULTS_ROOT
-        / "recdistill"
-        / distiller_name
-        / teacher_name.lower()
-        / student_name.lower()
-        / dataset_slug
-        / phase
-        / "wei"
-        / f"{distiller_name}_{teacher_name}_to_{student_name}_{dataset_slug}_{int(embedding_dim)}{STUDENT_EXT}"
+    path = distilled_student_artifact_path(
+        distiller=distiller,
+        teacher_framework=None,
+        teacher_model=teacher,
+        student_framework=None,
+        student_model=student or teacher,
+        dataset=dataset,
+        embedding_dim=embedding_dim,
+        strategy=phase,
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     return str(path)
@@ -255,11 +350,13 @@ def resolve_student_checkpoint_from_args(args: Any, distiller_name: str) -> Path
     return resolve_student_checkpoint(
         dataset=args.dataset,
         distiller=distiller_name,
+        teacher_framework=getattr(args, "teacher_framework", None),
         teacher_model=args.teacher_model,
         student_backbone=args.student_backbone,
         student_framework=getattr(args, "student_framework", None),
         student_embedding_dim=args.student_embedding_dim,
         output_path=args.output_path,
+        strategy=getattr(args, "output_strategy", "best"),
     )
 
 

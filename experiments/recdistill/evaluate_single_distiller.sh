@@ -59,8 +59,10 @@ echo "[1/1] Evaluating distilled student artifact..."
 python3 scripts/recdistill/evaluate_students.py \
   --dataset "${DATASET_LC}" \
   --distiller "${DISTILLER_LC}" \
+  --teacher-framework recbole \
   --teacher-model "${MODEL_LC}" \
-  --student-model "${MODEL_LC}" \
+  --student-framework recbole \
+  --student-backbone "${MODEL_LC}" \
   --student-embedding-dim "${EMBEDDING_DIM}" \
   --top-k "${TOP_K}" \
   --assert-no-train-leak

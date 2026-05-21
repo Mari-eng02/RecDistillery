@@ -38,7 +38,7 @@ from recdistill.config_integration import (
     recdistill_config_to_dict,
 )
 from recdistill.experiment_runner import RecDistillExperimentRunner
-from recdistill.paths import DISTILLED_STUDENT_EXT
+from recdistill.paths import DISTILLED_STUDENT_EXT, distilled_student_artifact_path
 from recdistill.model_validation import validate_distillation_request, validate_recdistill_config_dict
 from recdistill.tracking import resolve_wandb_logger
 from recdistill.training import set_seed
@@ -122,31 +122,46 @@ def _safe_slug(value: str, max_len: int = 80) -> str:
     return cleaned[:max_len] if len(cleaned) > max_len else cleaned
 
 
-def _experiment_tuple(train_conf: dict) -> tuple[str, str, str, str]:
+def _experiment_tuple(train_conf: dict) -> tuple[str, str, str, str, str, str]:
     student_conf = train_conf.get("student", {}) or {}
     teacher_conf = train_conf.get("teacher", {}) or {}
     dataset = str(train_conf.get("dataset") or "dataset")
     distiller = str(student_conf.get("model") or "DE")
+    teacher_framework = str(teacher_conf.get("framework") or "recbole")
     teacher = str(teacher_conf.get("model") or "teacher")
+    student_framework = str(student_conf.get("framework") or "recbole")
     student = str(student_conf.get("backbone") or "student")
     return (
         _safe_slug(distiller.lower()),
-        _safe_slug(teacher.lower()),
-        _safe_slug(student.lower()),
+        _safe_slug(teacher_framework.lower()),
+        _safe_slug(teacher),
+        _safe_slug(student_framework.lower()),
+        _safe_slug(student),
         _safe_slug(dataset.lower()),
     )
 
 
 def _default_results_dir(train_conf: dict, strategy: str) -> Path:
-    distiller, teacher, student, dataset = _experiment_tuple(train_conf)
-    return Path("results") / "recdistill" / distiller / teacher / student / dataset / strategy
+    distiller, teacher_framework, teacher, student_framework, student, dataset = _experiment_tuple(train_conf)
+    return Path("results") / "recdistill" / distiller / teacher_framework / teacher / student_framework / student / dataset
 
 
 def _tracked_results_dir(train_conf: dict, config_path: Path) -> Path:
-    distiller, teacher, student, dataset = _experiment_tuple(train_conf)
+    distiller, teacher_framework, teacher, student_framework, student, dataset = _experiment_tuple(train_conf)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     unique = f"{config_path.stem}__{stamp}_{time.time_ns()}"
-    return Path("results") / "recdistill" / distiller / teacher / student / dataset / "tracked" / unique
+    return (
+        Path("results")
+        / "recdistill"
+        / distiller
+        / teacher_framework
+        / teacher
+        / student_framework
+        / student
+        / dataset
+        / "tracked"
+        / unique
+    )
 
 
 def _expand_range_spec(spec: Any) -> list[Any]:
@@ -232,25 +247,35 @@ def _build_run_config(
     dataset = str(train_conf.get("dataset", "dataset"))
     teacher_model = str(train_conf.get("teacher", {}).get("model", "teacher"))
     student_backbone = str(train_conf.get("student", {}).get("backbone", "student"))
-    default_base_output_dir = _default_results_dir(train_conf, strategy=strategy)
+    teacher_conf = train_conf.get("teacher", {}) or {}
+    student_conf = train_conf.get("student", {}) or {}
+    canonical_output_path = distilled_student_artifact_path(
+        distiller=str(student_conf.get("model") or "DE"),
+        teacher_framework=teacher_conf.get("framework"),
+        teacher_model=str(teacher_conf.get("model") or "teacher"),
+        student_framework=student_conf.get("framework"),
+        student_model=str(student_conf.get("backbone") or "student"),
+        dataset=dataset,
+        embedding_dim=int(student_conf.get("embedding_dim", 0)),
+    )
+    try:
+        canonical_output_path = canonical_output_path.relative_to(REPO_ROOT)
+    except ValueError:
+        pass
+    default_base_output_dir = canonical_output_path.parent.parent
     base_output_dir = Path(grid_conf.get("output_dir") or default_base_output_dir)
     if create_dirs:
         base_output_dir.mkdir(parents=True, exist_ok=True)
-        (base_output_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
+        (base_output_dir / "wei").mkdir(parents=True, exist_ok=True)
+        (base_output_dir / "perf").mkdir(parents=True, exist_ok=True)
 
     override_slug = "_".join(f"{key}={value}" for key, value in overrides.items()) or "single"
     override_slug = _safe_slug(override_slug, max_len=90)
-    student_dim = int(train_conf.get("student", {}).get("embedding_dim", 0))
-    student_framework = str(train_conf.get("student", {}).get("framework", "")).strip().lower()
-    student_backbone = str(train_conf.get("student", {}).get("backbone", "")).strip().lower()
     if strategy == "fixed" and not overrides:
-        if student_framework and student_backbone:
-            output_filename = f"{student_framework}_{student_backbone}_{dataset}_{student_dim}{DISTILLED_STUDENT_EXT}"
-        else:
-            output_filename = f"student_{student_dim}{DISTILLED_STUDENT_EXT}" if student_dim > 0 else f"student{DISTILLED_STUDENT_EXT}"
+        output_path = canonical_output_path
     else:
         output_filename = f"{run_id}_{override_slug}{DISTILLED_STUDENT_EXT}"
-    output_path = base_output_dir / "checkpoints" / output_filename
+        output_path = base_output_dir / "wei" / output_filename
     runtime_conf = train_conf.get("runtime", {}) or {}
     existing_output_path = runtime_conf.get("output_path")
     if strategy == "fixed" and existing_output_path:
@@ -501,6 +526,7 @@ def build_command(config: dict) -> list[str]:
     _add_arg(cmd, "--device", runtime_conf.get("device"))
     _add_arg(cmd, "--num-workers", runtime_conf.get("num_workers"))
     _add_arg(cmd, "--output-path", runtime_conf.get("output_path"))
+    _add_arg(cmd, "--output-strategy", runtime_conf.get("output_strategy"))
     _add_arg(cmd, "--save-every", runtime_conf.get("save_every"))
 
     if eval_conf.get("enabled") is False:
@@ -641,11 +667,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Launch RecDistill student training from a validated config.")
     parser.add_argument("--config", help="Config preset or direct YAML/JSON configuration file")
     parser.add_argument("--dataset", help="Dataset name for ConfigLoader composition")
-    parser.add_argument("--teacher", help="Teacher model for ConfigLoader composition")
-    parser.add_argument("--teacher-framework", default="recbole", choices=["recbole", "elliot", "lenskit"], help="Teacher framework for ConfigLoader composition")
+    parser.add_argument("--teacher-model", "--teacher", dest="teacher_model", help="Teacher model for ConfigLoader composition")
+    parser.add_argument("--teacher-framework", default=None, choices=["recbole", "elliot", "lenskit"], help="Teacher framework for ConfigLoader composition")
     parser.add_argument("--distiller", help="Distillation strategy for ConfigLoader composition")
-    parser.add_argument("--student", help="Student backbone for ConfigLoader composition")
-    parser.add_argument("--student-framework", default="recbole", choices=["recbole", "elliot", "lenskit"], help="Student framework for ConfigLoader composition")
+    parser.add_argument("--student-backbone", "--student", dest="student_backbone", help="Student backbone for ConfigLoader composition")
+    parser.add_argument("--student-framework", default=None, choices=["recbole", "elliot", "lenskit"], help="Student framework for ConfigLoader composition")
+    parser.add_argument("--output-strategy", choices=["best", "bayesian", "tracked"], help="Output strategy namespace")
     parser.add_argument("--dry-run", action="store_true", help="Only print the resolved run plan")
     parser.add_argument(
         "--track",
@@ -669,23 +696,25 @@ def main() -> None:
                 )
             config = recdistill_config_to_dict(load_recdistill_config_from_file(config_path))
     else:
+        args.teacher_framework = args.teacher_framework or "recbole"
+        args.student_framework = args.student_framework or "recbole"
         missing = [
             name
             for name, value in {
                 "--dataset": args.dataset,
-                "--teacher": args.teacher,
+                "--teacher-model": args.teacher_model,
                 "--distiller": args.distiller,
             }.items()
             if not value
         ]
         if missing:
-            parser.error("--config or the full --dataset/--teacher/--distiller set is required")
+            parser.error("--config or the full --dataset/--teacher-model/--distiller set is required")
         try:
             validate_distillation_request(
                 teacher_framework=args.teacher_framework,
-                teacher_model=args.teacher,
+                teacher_model=args.teacher_model,
                 student_framework=args.student_framework,
-                student_backbone=args.student or args.teacher,
+                student_backbone=args.student_backbone or args.teacher_model,
                 distiller=args.distiller,
             )
         except ValueError as exc:
@@ -693,23 +722,23 @@ def main() -> None:
         config = recdistill_config_to_dict(
             load_recdistill_experiment(
                 dataset_name=args.dataset,
-                teacher_model=args.teacher,
+                teacher_model=args.teacher_model,
                 teacher_framework=args.teacher_framework,
                 distiller_strategy=args.distiller,
-                student_backbone=args.student,
+                student_backbone=args.student_backbone,
                 student_framework=args.student_framework,
             )
         )
         preset_path = get_config_loader().save_generated_preset(
             kind="recdistill",
             family="generated",
-            name=f"{args.distiller}_{args.teacher_framework}_{args.teacher}_{args.student_framework}_{args.student or args.teacher}_{args.dataset}",
+            name=f"{args.distiller}_{args.teacher_framework}_{args.teacher_model}_{args.student_framework}_{args.student_backbone or args.teacher_model}_{args.dataset}",
             path_parts=[
                 args.distiller,
                 args.teacher_framework,
-                args.teacher,
+                args.teacher_model,
                 args.student_framework,
-                args.student or args.teacher,
+                args.student_backbone or args.teacher_model,
                 args.dataset,
             ],
             config=config,
@@ -719,6 +748,8 @@ def main() -> None:
 
     run_conf = config.get("run", {})
     train_conf = _normalize_train_conf(config)
+    if args.output_strategy:
+        _set_dotted(train_conf, "runtime.output_strategy", args.output_strategy)
     optim_conf = train_conf.get("optimization", {}) or {}
     optuna_conf = (
         optim_conf.get("optuna")
@@ -818,8 +849,7 @@ def main() -> None:
             record["avg_epoch_time_sec"] = round(elapsed / final_epoch_int, 6)
         record["history_path"] = str(output_path.with_suffix(".history.json"))
         record["final_checkpoint_path"] = str(output_path) if output_path.exists() else None
-        best_checkpoint_path = output_path.with_name(f"{output_path.stem}.best{DISTILLED_STUDENT_EXT}")
-        record["best_checkpoint_path"] = str(best_checkpoint_path) if best_checkpoint_path.exists() else None
+        record["best_checkpoint_path"] = str(output_path) if output_path.exists() and checkpoint_metrics.get("best_epoch") else None
         records.append(record)
 
         if status == "failed" and fail_fast:

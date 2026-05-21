@@ -47,16 +47,18 @@ def _resolve_checkpoint_path(args: argparse.Namespace) -> Path:
     if args.path:
         return Path(args.path)
 
-    if not args.dataset or not args.student_model or not args.student_embedding_dim:
+    if not args.dataset or not args.student_backbone or not args.student_embedding_dim:
         raise ValueError(
-            "Use --path, or provide --dataset, --student-model and --student-embedding-dim."
+            "Use --path, or provide --dataset, --student-backbone and --student-embedding-dim."
         )
 
     return resolve_student_checkpoint(
         dataset=args.dataset,
         distiller=args.distiller,
         teacher_model=args.teacher_model,
-        student_backbone=args.student_model,
+        teacher_framework=args.teacher_framework,
+        student_backbone=args.student_backbone,
+        student_framework=args.student_framework,
         student_embedding_dim=int(args.student_embedding_dim),
         output_path=None,
     )
@@ -96,9 +98,9 @@ def _build_model(
     config: dict[str, Any],
     train_dataset,
 ) -> torch.nn.Module:
-    backbone = args.student_model or _config_value(config, "student_backbone", "backbone", default=None)
+    backbone = args.student_backbone or _config_value(config, "student_backbone", "backbone", default=None)
     if backbone is None:
-        raise ValueError("Student model is missing. Pass --student-model or use a checkpoint with config.")
+        raise ValueError("Student backbone is missing. Pass --student-backbone or use a checkpoint with config.")
 
     embedding_dim = args.student_embedding_dim or _config_value(
         config,
@@ -135,9 +137,7 @@ def _default_output_json(
     dataset: str,
     top_k: int,
 ) -> Path:
-    if checkpoint_path.parent.name == "checkpoints":
-        perf_dir = checkpoint_path.parent.parent / "perf"
-    elif checkpoint_path.parent.name == "wei":
+    if checkpoint_path.parent.name == "wei":
         perf_dir = checkpoint_path.parent.parent / "perf"
     else:
         perf_dir = checkpoint_path.parent / "perf"
@@ -232,7 +232,7 @@ def evaluate_student_artifact(args: argparse.Namespace) -> Path:
     if args.assert_no_train_leak and (val_leaks > 0 or test_leaks > 0):
         raise RuntimeError(f"Train-item leakage detected: val={val_leaks}, test={test_leaks}")
 
-    student_model = args.student_model or _config_value(config, "student_backbone", "backbone", default=payload.get("student"))
+    student_model = args.student_backbone or _config_value(config, "student_backbone", "backbone", default=payload.get("student"))
     student_framework = args.student_framework or _config_value(config, "student_framework", "framework", default=None)
     embedding_dim = args.student_embedding_dim or _config_value(config, "student_embedding_dim", "embedding_dim", default=None)
     distiller = _plain_distiller_name(
@@ -294,13 +294,13 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python scripts/recdistill/evaluate_students.py --path results/citeulike/student/recbole/BPRMF/best/wei/BPRMF_citeulike_64.student
+  python scripts/recdistill/evaluate_students.py --path results/students/recbole/BPRMF/citeulike/best/wei/recbole_BPRMF_citeulike_64.student
 
   python scripts/recdistill/evaluate_students.py ^
     --dataset citeulike ^
     --distiller de ^
     --teacher-model BPRMF ^
-    --student-model BPRMF ^
+    --student-backbone BPRMF ^
     --student-embedding-dim 64
         """,
     )
@@ -308,7 +308,8 @@ Examples:
     parser.add_argument("--dataset", default=None, help="Dataset name")
     parser.add_argument("--distiller", default="plain", help="Distiller name for path resolution; use plain for non-distilled students")
     parser.add_argument("--teacher-model", default=None, help="Teacher model used for distilled-student path resolution")
-    parser.add_argument("--student-model", "--model", dest="student_model", default=None, help="Student model/backbone")
+    parser.add_argument("--teacher-framework", default="recbole", choices=["recbole", "elliot", "lenskit"], help="Teacher framework used for distilled-student path resolution")
+    parser.add_argument("--student-backbone", "--student-model", "--model", dest="student_backbone", default=None, help="Student backbone/model")
     parser.add_argument("--student-framework", default=None, choices=["recbole", "elliot", "lenskit"], help="Override student framework adapter")
     parser.add_argument("--student-embedding-dim", "--embedding-dim", dest="student_embedding_dim", type=int, default=None, help="Student embedding dimension")
     parser.add_argument("--top-k", type=int, default=20, help="Top-k recommendations")

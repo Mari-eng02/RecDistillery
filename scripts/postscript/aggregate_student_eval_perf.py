@@ -2,7 +2,7 @@
 Aggregate baseline student evaluation outputs into a single TSV.
 
 Input files (default pattern):
-    results/<dataset>/student/<framework>/<student>/best/perf/*_eval_top*.json
+    results/students/<framework>/<student>/<dataset>/best/perf/*_eval_top*.json
 
 Each JSON is expected to follow the structure produced by:
     scripts/recdistill/evaluate_students.py
@@ -27,8 +27,17 @@ def _safe_str(value) -> str:
 
 def _extract_context(eval_json_path: Path, results_root: Path) -> dict[str, str]:
     rel = eval_json_path.relative_to(results_root)
-    # Current layout: <dataset>/student/<framework>/<student>/best/perf/<file>
-    # Older layout:   <dataset>/student/<student>/best/perf/<file>
+    # Current layout: students/<framework>/<student>/<dataset>/best/perf/<file>
+    if len(parts) >= 7 and parts[0] == "students" and parts[5] == "perf":
+        return {
+            "dataset": parts[3],
+            "framework": parts[1],
+            "student": parts[2],
+            "phase": parts[4],
+            "eval_json_file": str(eval_json_path),
+        }
+    # Legacy layout: <dataset>/student/<framework>/<student>/best/perf/<file>
+    # Older layout:  <dataset>/student/<student>/best/perf/<file>
     parts = rel.parts
     if len(parts) >= 7 and parts[1] == "student" and parts[5] == "perf":
         return {
@@ -75,6 +84,7 @@ def _row_from_split(payload: dict, split: str, context: dict[str, str]) -> dict[
 def aggregate(results_root: Path) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     patterns = [
+        "students/*/*/*/best/perf/*_eval_top*.json",
         "*/student/*/*/best/perf/*_eval_top*.json",
         "*/student/*/best/perf/*_eval_top*.json",
     ]

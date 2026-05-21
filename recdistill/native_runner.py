@@ -12,7 +12,7 @@ from recdistill.checkpointing import save_student_checkpoint
 from recdistill.data.datarec_loader import load_eval_split, load_interaction_dataset
 from recdistill.evaluation import evaluate_student
 from recdistill.factories import build_student_model, normalize_backbone_name, parse_mlp_dims
-from recdistill.paths import RESULTS_ROOT, STUDENT_EXT, TEACHER_EXT
+from recdistill.paths import STUDENT_EXT, TEACHER_EXT, student_artifact_path, teacher_artifact_path
 from recdistill.teachers.serialization import save_teacher_state
 from recdistill.teachers.state import PrecomputedScoresScorer, TeacherState
 from recdistill.tracking import utc_now_iso
@@ -313,7 +313,7 @@ class NativeModelTrainingRunner:
         history: list[dict[str, Any]] = []
         best_score = float("-inf")
         best_epoch = 0
-        best_path = _with_role_suffix(self.output_path, f".best{TEACHER_EXT if self.role == 'teacher' else STUDENT_EXT}")
+        saved_best_artifact = False
 
         for epoch in range(1, int(self.args.epochs) + 1):
             metrics = self.trainer.train_epoch()
@@ -344,7 +344,8 @@ class NativeModelTrainingRunner:
                 if selected_score > best_score:
                     best_score = selected_score
                     best_epoch = epoch
-                    self._save_artifact(best_path, epoch, history + [row], best_epoch, best_score)
+                    self._save_artifact(self.output_path, epoch, history + [row], best_epoch, best_score)
+                    saved_best_artifact = True
 
             history.append(row)
             self._print_epoch(epoch, metrics, current_eval)
@@ -357,7 +358,8 @@ class NativeModelTrainingRunner:
                 self._save_artifact(periodic, epoch, history, best_epoch, best_score if best_epoch > 0 else None)
 
         final_epoch = int(history[-1]["epoch"]) if history else 0
-        self._save_artifact(self.output_path, final_epoch, history, best_epoch, best_score if best_epoch > 0 else None)
+        if not saved_best_artifact:
+            self._save_artifact(self.output_path, final_epoch, history, best_epoch, best_score if best_epoch > 0 else None)
         history_path = self.output_path.with_suffix(".history.json")
         history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
 
@@ -371,12 +373,12 @@ class NativeModelTrainingRunner:
             "history_path": str(history_path),
             "best_epoch": best_epoch,
             "best_selection_score": best_score if best_epoch > 0 else None,
-            "best_path": str(best_path) if best_epoch > 0 else None,
+            "best_path": str(self.output_path) if best_epoch > 0 else None,
         }
         print("\nTraining complete.")
         print(f"{self.role.capitalize()} artifact: {self.output_path}")
         if best_epoch > 0:
-            print(f"Best artifact: {best_path} (epoch={best_epoch}, score={best_score:.6f})")
+            print(f"Best artifact: {self.output_path} (epoch={best_epoch}, score={best_score:.6f})")
         print(f"History JSON: {history_path}\n")
         return result
 
@@ -448,15 +450,19 @@ class NativeModelTrainingRunner:
         return PrecomputedScoresScorer(scores=torch.cat(rows, dim=0))
 
     def _default_output_path(self) -> Path:
-        model = self.backbone.upper()
-        dataset = str(self.args.dataset).lower()
-        framework = str(self.args.framework).strip().lower()
-        dim = int(self.args.embedding_dim)
         if self.role == "teacher":
-            file_name = f"{framework}_{model}_{dataset}_{dim}{TEACHER_EXT}" if framework else f"{model}_{dataset}_{dim}{TEACHER_EXT}"
-            return RESULTS_ROOT / dataset / "teacher" / framework / model / "best" / "wei" / file_name
-        file_name = f"{framework}_{model}_{dataset}_{dim}{STUDENT_EXT}" if framework else f"{model}_{dataset}_{dim}{STUDENT_EXT}"
-        return RESULTS_ROOT / dataset / "student" / framework / model / "best" / "wei" / file_name
+            return teacher_artifact_path(
+                framework=self.args.framework,
+                model=self.backbone,
+                dataset=self.args.dataset,
+                embedding_dim=int(self.args.embedding_dim),
+            )
+        return student_artifact_path(
+            framework=self.args.framework,
+            model=self.backbone,
+            dataset=self.args.dataset,
+            embedding_dim=int(self.args.embedding_dim),
+        )
 
     def _update_eval_row(self, row: dict[str, Any], current_eval: dict[str, Any]) -> None:
         row["val_precision"] = float(current_eval["val"]["precision"])

@@ -8,9 +8,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from recdistill.native_runner import (
     NativeModelTrainingRunner,
-    native_args_to_config,
     native_args_from_config_file,
-    native_args_from_model_config,
 )
 from recdistill.paths import AMAZONCD, BOOKCROSSING, BPRMF, CITEULIKE, LGCN, NMF
 from recdistill.model_validation import validate_trainable_model
@@ -20,7 +18,7 @@ from config import get_config_loader
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a native RecDistill teacher.")
     parser.add_argument("--model", type=str, default=BPRMF, help="Recommendation model")
-    parser.add_argument("--framework", type=str, default="recbole", choices=["recbole", "elliot", "lenskit"])
+    parser.add_argument("--framework", type=str, default=None, choices=["recbole", "elliot", "lenskit"])
     parser.add_argument("--dataset", type=str, default=CITEULIKE, help="Dataset name")
     parser.add_argument("--config", type=str, default=None, help="Optional native YAML/JSON config")
     parser.add_argument("--epochs", type=int, default=None)
@@ -36,12 +34,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
     backbones = [BPRMF, "LINE", LGCN, "NGCF", "DGCF", "SGL", "SPECTRALCF", NMF]
     datasets = [CITEULIKE, BOOKCROSSING, AMAZONCD]
-    try:
-        args.model = validate_trainable_model(args.framework, args.model, role="teacher model")
-        assert args.model in backbones, f"Invalid model: {args.model}. Choose from {backbones}"
-        assert args.dataset in datasets, f"Invalid dataset: {args.dataset}. Choose from {datasets}"
-    except (AssertionError, ValueError) as exc:
-        parser.error(str(exc))
+    if not args.config:
+        args.framework = args.framework or "recbole"
+        try:
+            args.model = validate_trainable_model(args.framework, args.model, role="teacher model")
+            assert args.model in backbones, f"Invalid model: {args.model}. Choose from {backbones}"
+            assert args.dataset in datasets, f"Invalid dataset: {args.dataset}. Choose from {datasets}"
+        except (AssertionError, ValueError) as exc:
+            parser.error(str(exc))
 
     overrides = {
         "epochs": args.epochs,
@@ -65,21 +65,39 @@ if __name__ == "__main__":
         )
         try:
             train_args.backbone = validate_trainable_model(train_args.framework, train_args.backbone, role="teacher model")
-        except ValueError as exc:
+            assert train_args.backbone in backbones, f"Invalid model: {train_args.backbone}. Choose from {backbones}"
+            assert train_args.dataset in datasets, f"Invalid dataset: {train_args.dataset}. Choose from {datasets}"
+        except (AssertionError, ValueError) as exc:
             parser.error(str(exc))
     else:
-        train_args = native_args_from_model_config(
-            role="teacher",
-            dataset=args.dataset,
-            backbone=args.model,
-            overrides=overrides,
+        loader = get_config_loader()
+        composed_config = loader.compose_teacher_training(
+            dataset_name=args.dataset,
+            model_name=args.model,
+            framework=args.framework,
         )
-        preset_path = get_config_loader().save_generated_preset(
+        preset_path = loader.save_generated_preset(
             kind="teacher",
             family="generated",
-            name=f"{train_args.framework}_{train_args.backbone}_{train_args.dataset}_{train_args.embedding_dim}",
-            path_parts=[train_args.framework, train_args.backbone, train_args.dataset],
-            config=native_args_to_config(train_args),
+            name=(
+                f"{composed_config['teacher']['framework']}_"
+                f"{composed_config['teacher']['model']}_"
+                f"{composed_config['dataset']}_"
+                f"{composed_config['teacher']['embedding_dim']}"
+            ),
+            path_parts=[
+                composed_config["teacher"]["framework"],
+                composed_config["teacher"]["model"],
+                composed_config["dataset"],
+            ],
+            config=composed_config,
+        )
+        train_args = native_args_from_config_file(
+            preset_path,
+            role="teacher",
+            fallback_dataset=args.dataset,
+            fallback_backbone=args.model,
+            overrides=overrides,
         )
         print(f"Generated teacher config saved to: {preset_path}")
 

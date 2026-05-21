@@ -9,7 +9,7 @@ This script:
 
 Usage:
     python scripts/recdistill/evaluate_teacher.py \
-      --dataset citeulike --model BPRMF --embedding-dim 200 --top-k 20
+      --dataset citeulike --teacher-model BPRMF --embedding-dim 200 --top-k 20
 """
 
 from __future__ import annotations
@@ -282,19 +282,31 @@ def _resolve_teacher_path(model: str, dataset: str, embedding_dim: int, framewor
 
 
 def _default_output_json(dataset: str, model: str, embedding_dim: int, top_k: int, framework: str | None = None) -> Path:
-    out_dir = Path("results") / dataset / "teacher"
-    if framework:
-        out_dir = out_dir / str(framework).strip().lower()
-    out_dir = out_dir / model / "best" / "perf"
+    teacher_path = Path(
+        teacher_weights_path(
+            model=model,
+            dataset=dataset,
+            embedding_dim=embedding_dim,
+            phase="best",
+            framework=framework,
+        )
+    )
+    out_dir = teacher_path.parent.parent / "perf" if teacher_path.parent.name == "wei" else teacher_path.parent / "perf"
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir / f"{model}_{dataset}_{embedding_dim}_eval_top{top_k}.json"
 
 
 def _default_output_tsv(dataset: str, model: str, embedding_dim: int, top_k: int, framework: str | None = None) -> Path:
-    out_dir = Path("results") / dataset / "teacher"
-    if framework:
-        out_dir = out_dir / str(framework).strip().lower()
-    out_dir = out_dir / model / "best" / "perf"
+    teacher_path = Path(
+        teacher_weights_path(
+            model=model,
+            dataset=dataset,
+            embedding_dim=embedding_dim,
+            phase="best",
+            framework=framework,
+        )
+    )
+    out_dir = teacher_path.parent.parent / "perf" if teacher_path.parent.name == "wei" else teacher_path.parent / "perf"
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir / f"{model}_{dataset}_{embedding_dim}_eval_top{top_k}.tsv"
 
@@ -302,8 +314,8 @@ def _default_output_tsv(dataset: str, model: str, embedding_dim: int, top_k: int
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate teacher model recommendation metrics.")
     parser.add_argument("--dataset", required=True, help="Dataset name")
-    parser.add_argument("--model", required=True, choices=["BPRMF", "LGCN", "NMF", "NFM"], help="Teacher model name")
-    parser.add_argument("--framework", default=None, choices=["recbole", "elliot", "lenskit"], help="Framework namespace for default teacher path")
+    parser.add_argument("--teacher-model", "--model", dest="model", required=True, choices=["BPRMF", "LGCN", "NMF", "NFM"], help="Teacher model name")
+    parser.add_argument("--teacher-framework", "--framework", dest="framework", default=None, choices=["recbole", "elliot", "lenskit"], help="Framework namespace for default teacher path")
     parser.add_argument("--embedding-dim", required=True, type=int, help="Teacher embedding dim used in filename")
     parser.add_argument("--teacher-path", default=None, help="Optional explicit path to .teacher file")
     parser.add_argument("--top-k", type=int, default=20, help="Top-k recommendations for metrics")

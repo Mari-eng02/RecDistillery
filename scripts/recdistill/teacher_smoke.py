@@ -94,7 +94,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Smoke test for teacher exports in recdistill")
     parser.add_argument("--dataset", required=True, help="Dataset name, e.g. bookcrossing or amazon_cd")
     parser.add_argument("--teacher-framework", default="auto", help="Teacher framework namespace, e.g. recbole, elliot, lenskit")
-    parser.add_argument("--model", required=True, choices=["BPRMF", "LGCN", "NMF"], help="Teacher model name")
+    parser.add_argument("--teacher-model", "--model", dest="model", required=True, choices=["BPRMF", "LGCN", "NMF"], help="Teacher model name")
     parser.add_argument("--embedding-dim", required=True, type=int, help="Teacher embedding dimension used in filename")
     parser.add_argument("--top-k", default=20, type=int, help="Teacher top-k to materialize for smoke testing")
     parser.add_argument("--teacher-path", default=None, help="Optional explicit path to the exported teacher pickle")

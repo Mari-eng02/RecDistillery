@@ -2,7 +2,7 @@
 Aggregate student evaluation outputs into a single TSV.
 
 Input files (default patterns):
-    results/recdistill/{distiller}/{teacher}/{student}/{dataset}/{strategy}/perf/*_eval_top*.json
+    results/recdistill/{distiller}/{teacher_framework}/{teacher}/{student_framework}/{student}/{dataset}/{strategy}/perf/*_eval_top*.json
 
 Each JSON is expected to follow the structure produced by:
     scripts/recdistill/evaluate_students.py
@@ -36,7 +36,22 @@ def _extract_context(eval_json_path: Path, results_root: Path) -> dict[str, str]
     rel = eval_json_path.relative_to(results_root)
     parts = rel.parts
 
-    # Distilled-student evaluation layout:
+    # Current distilled-student evaluation layout:
+    # recdistill/<distiller>/<teacher_framework>/<teacher>/<student_framework>/<student>/<dataset>/<strategy>/perf/<file>
+    if len(parts) >= 10 and parts[0] == "recdistill" and parts[8] == "perf":
+        return {
+            "distiller": parts[1],
+            "teacher_framework": parts[2],
+            "teacher": parts[3],
+            "student_framework": parts[4],
+            "backbone": parts[5],
+            "dataset": parts[6],
+            "student_model": f"{parts[2]}_{parts[3]}_{parts[4]}_{parts[5]}",
+            "phase": parts[7],
+            "eval_json_file": str(eval_json_path),
+        }
+
+    # Legacy layout:
     # recdistill/<distiller>/<teacher>/<student>/<dataset>/<strategy>/perf/<file>
     if len(parts) >= 8 and parts[0] == "recdistill" and parts[6] == "perf":
         return {
@@ -85,6 +100,7 @@ def aggregate(results_root: Path) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
 
     patterns = [
+        "recdistill/*/*/*/*/*/*/*/perf/*_eval_top*.json",
         "recdistill/*/*/*/*/*/perf/*_eval_top*.json",
     ]
     eval_files = []

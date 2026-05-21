@@ -9,7 +9,7 @@ import copy
 import yaml
 from pydantic import ValidationError
 
-from recdistill.paths import DISTILLED_STUDENT_EXT
+from recdistill.paths import distilled_student_artifact_path
 
 from config.schemas import (
     ConfigPreset,
@@ -343,17 +343,17 @@ class ConfigLoader:
         template["train_student"]["student"]["model"] = template["train_student"]["distillation"]["strategy"]
 
         runtime = template["train_student"].setdefault("runtime", {})
-        runtime["output_path"] = (
-            Path("results")
-            / "recdistill"
-            / distiller_strategy.lower()
-            / teacher_model.lower()
-            / student_backbone.lower()
-            / dataset_name.lower()
-            / "fixed"
-            / "checkpoints"
-            / f"student_{student_cfg.embedding_dim}{DISTILLED_STUDENT_EXT}"
-        ).as_posix()
+        runtime["output_path"] = str(
+            distilled_student_artifact_path(
+                distiller=distiller_strategy,
+                teacher_framework=teacher_cfg.framework,
+                teacher_model=teacher_cfg.model,
+                student_framework=student_cfg.framework,
+                student_model=student_cfg.backbone,
+                dataset=dataset_name,
+                embedding_dim=student_cfg.embedding_dim,
+            ).relative_to(Path(__file__).resolve().parents[1])
+        ).replace("\\", "/")
         
         from recdistill.config_integration import normalize_recdistill_config
 

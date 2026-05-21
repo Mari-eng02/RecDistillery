@@ -16,6 +16,7 @@ MODEL="$3"
 DISTILLER_LC="$(echo "${DISTILLER}" | tr '[:upper:]' '[:lower:]')"
 DATASET_LC="$(echo "${DATASET}" | tr '[:upper:]' '[:lower:]')"
 MODEL_LC="$(echo "${MODEL}" | tr '[:upper:]' '[:lower:]')"
+MODEL_UC="$(echo "${MODEL}" | tr '[:lower:]' '[:upper:]')"
 
 EMBEDDING_DIM=20
 TOP_K=20
@@ -25,7 +26,7 @@ CONFIG_ROOT="config/presets/recdistill/final_rerun"
 cd "${REPO_ROOT}"
 export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 
-TRACKED_ROOT="${FETCHED_ROOT}/${DISTILLER_LC}/${MODEL_LC}/${DATASET_LC}/tracked"
+TRACKED_ROOT="${FETCHED_ROOT}/${DISTILLER_LC}/recbole/${MODEL_UC}/recbole/${MODEL_UC}/${DATASET_LC}/tracked"
 if [ ! -d "${TRACKED_ROOT}" ]; then
   echo "Warning: tracked root not found: ${TRACKED_ROOT}" >&2
   exit 0
@@ -64,11 +65,11 @@ PY
 )"
 
 if [ -z "${SOURCE_CHECKPOINT}" ] || [ ! -f "${SOURCE_CHECKPOINT}" ]; then
-  SOURCE_CHECKPOINT="$(find "${RUN_DIR}/checkpoints" -maxdepth 1 -type f -name '*.best.distilled_student' | sort | tail -n 1 || true)"
+  SOURCE_CHECKPOINT="$(find "${RUN_DIR}/wei" -maxdepth 1 -type f -name '*.distilled_student' | sort | tail -n 1 || true)"
 fi
 
 if [ -z "${SOURCE_CHECKPOINT}" ] || [ ! -f "${SOURCE_CHECKPOINT}" ]; then
-  echo "Warning: no best checkpoint found under ${RUN_DIR}/checkpoints" >&2
+  echo "Warning: no distilled student artifact found under ${RUN_DIR}/wei" >&2
   exit 0
 fi
 
@@ -93,9 +94,11 @@ echo "[1/1] Evaluating fetched distilled student artifact..."
 python3 scripts/recdistill/evaluate_students.py \
   --path "${SOURCE_CHECKPOINT}" \
   --distiller "${DISTILLER_LC}" \
+  --teacher-framework recbole \
   --teacher-model "${MODEL_LC}" \
   --dataset "${DATASET_LC}" \
-  --student-model "${MODEL_LC}" \
+  --student-framework recbole \
+  --student-backbone "${MODEL_LC}" \
   --student-embedding-dim "${EMBEDDING_DIM}" \
   --top-k "${TOP_K}" \
   --assert-no-train-leak \
