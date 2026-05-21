@@ -536,6 +536,4 @@ python3 scripts/recdistill/train_student_from_config.py \
 results/recdistill/<distiller>/<teacher_framework>/<teacher_model>/<student_framework>/<student_model>/<dataset>/tracked/<run_id>/
 ```
 
-Each tracked run directory contains `wei/` and `perf/`.
-
 ---
