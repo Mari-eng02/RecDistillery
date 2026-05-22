@@ -3,7 +3,7 @@ strategy: UnKD
 lambda_unkd: 0.1
 unkd:
   sample_num: 30
-  group_count: 9
-  popularity_lambda: 0.181357308677834
+  group_count: 4
+  popularity_lambda: 1.0
   rank_top_k: 1000
   rank_temperature: 20.0

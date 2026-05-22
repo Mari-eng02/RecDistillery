@@ -33,12 +33,14 @@ def load_teacher_state(
 
 def register_default_teacher_adapters() -> None:
     from recdistill.teachers.adapters import (
-        NativeTeacherAdapter,
-        NumpyEmbeddingsTeacherAdapter,
+        CheckpointAdapter,
+        PredictionsJsonAdapter,
+        RecBolePthAdapter,
     )
 
-    register_teacher_adapter(NativeTeacherAdapter(), "recdistill_native", "teacher_v1", "teacher_v2")
-    register_teacher_adapter(NumpyEmbeddingsTeacherAdapter(), "npz", "npy", "embeddings_npz", "embeddings_npy")
+    register_teacher_adapter(CheckpointAdapter(), "torch", "torch_checkpoint", "teacher")
+    register_teacher_adapter(PredictionsJsonAdapter(), "prediction_json", "json_predictions", "json")
+    register_teacher_adapter(RecBolePthAdapter(), "recbole", "pth")
 
 
 register_default_teacher_adapters()

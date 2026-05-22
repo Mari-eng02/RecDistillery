@@ -9,7 +9,7 @@ import torch
 
 from config import RecDistillConfig
 from recdistill.checkpointing import load_student_checkpoint, save_student_checkpoint
-from recdistill.data.datarec_loader import load_eval_split, load_train_dataset
+from recdistill.data.datarec_loader import load_eval_split, load_train_dataset, resolve_teacher_dataset_mappings
 from recdistill.evaluation import evaluate_embeddings, evaluate_student
 from recdistill.factories import build_distiller_from_args, build_student_model, normalize_backbone_name
 from recdistill.paths import resolve_student_checkpoint_from_args, resolve_teacher_checkpoint_from_args
@@ -161,12 +161,17 @@ class RecDistillExperimentRunner:
             )
 
         self.teacher_state = teacher_state
+        user_mapping, item_mapping, mapping_source = resolve_teacher_dataset_mappings(
+            teacher_state.metadata,
+            dataset_name=self.args.dataset,
+        )
+        print(f"Dataset mapping source: {mapping_source}")
         self.dataset, dropped = load_train_dataset(
             dataset_name=self.args.dataset,
             teacher_num_users=teacher_state.num_users,
             teacher_num_items=teacher_state.num_items,
-            user_mapping=teacher_state.metadata.get("public_to_local_user_id"),
-            item_mapping=teacher_state.metadata.get("public_to_local_item_id"),
+            user_mapping=user_mapping,
+            item_mapping=item_mapping,
         )
         print(f"Train interactions: {len(self.dataset.interactions)}")
         print(f"Dropped interactions (out of teacher range): {dropped}")
@@ -177,16 +182,16 @@ class RecDistillExperimentRunner:
                 split_name="val",
                 teacher_num_users=teacher_state.num_users,
                 teacher_num_items=teacher_state.num_items,
-                user_mapping=teacher_state.metadata.get("public_to_local_user_id"),
-                item_mapping=teacher_state.metadata.get("public_to_local_item_id"),
+                user_mapping=user_mapping,
+                item_mapping=item_mapping,
             )
             self.test_dict, dropped_test = load_eval_split(
                 dataset_name=self.args.dataset,
                 split_name="test",
                 teacher_num_users=teacher_state.num_users,
                 teacher_num_items=teacher_state.num_items,
-                user_mapping=teacher_state.metadata.get("public_to_local_user_id"),
-                item_mapping=teacher_state.metadata.get("public_to_local_item_id"),
+                user_mapping=user_mapping,
+                item_mapping=item_mapping,
             )
             print(f"Validation interactions: {sum(len(v) for v in self.val_dict.values())} (dropped: {dropped_val})")
             print(f"Test interactions: {sum(len(v) for v in self.test_dict.values())} (dropped: {dropped_test})")
@@ -674,7 +679,7 @@ def runner_args_from_config(config: RecDistillConfig) -> SimpleNamespace:
         device=runtime.device,
         num_workers=runtime.num_workers,
         output_path=runtime.output_path,
-        output_strategy=getattr(runtime, "output_strategy", "best"),
+        output_strategy=getattr(runtime, "output_strategy", "fixed"),
         save_every=runtime.save_every,
         skip_eval=not evaluation.enabled,
         eval_k=evaluation.k,

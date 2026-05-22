@@ -5,5 +5,5 @@ lambda_de: 0.0
 rrd:
   interesting_size: 40
   uninteresting_size: 50
-  temperature: null
-  teacher_topk: null
+  temperature: 1.0
+  teacher_topk: 500

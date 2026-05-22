@@ -70,14 +70,14 @@ def _bootstrap_local_recdistill():
 
 
 try:
-    from recdistill.data.datarec_loader import load_interaction_dataset
+    from recdistill.data.datarec_loader import load_interaction_dataset, resolve_teacher_dataset_mappings
     from recdistill.data.interactions import InteractionDataset
     from recdistill.samplers.teacher_topk import TeacherTopKProvider
     from recdistill.teachers import load_teacher_state
 except ModuleNotFoundError as exc:
     if exc.name and exc.name.startswith("recdistill"):
         InteractionDataset, TeacherTopKProvider, load_teacher_state = _bootstrap_local_recdistill()
-        from recdistill.data.datarec_loader import load_interaction_dataset
+        from recdistill.data.datarec_loader import load_interaction_dataset, resolve_teacher_dataset_mappings
     else:
         raise
 
@@ -110,10 +110,14 @@ def main() -> None:
     )
     state = load_teacher_state(teacher_path)
 
+    user_mapping, item_mapping, _mapping_source = resolve_teacher_dataset_mappings(
+        state.metadata,
+        dataset_name=args.dataset,
+    )
     dataset = _load_dataset(
         dataset_name=args.dataset,
-        user_mapping=state.metadata.get("public_to_local_user_id"),
-        item_mapping=state.metadata.get("public_to_local_item_id"),
+        user_mapping=user_mapping,
+        item_mapping=item_mapping,
     )
     provider = TeacherTopKProvider(top_k=args.top_k)
     teacher_topk = provider.build(teacher_state=state, dataset=dataset)

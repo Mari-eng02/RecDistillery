@@ -1,0 +1,68 @@
+preset:
+  schema_version: 1
+  kind: recdistill
+  family: generated
+  name: rrd_imported_lenskit_ItemKNNScorer_citeulike_200_recbole_BPRMF_citeulike
+  generated: true
+config:
+  train_student:
+    dataset: citeulike
+    teacher:
+      framework: lenskit
+      model: ITEMKNNSCORER
+      embedding_dim: 21
+      path: results\teachers\lenskit\ItemKNNScorer\citeulike\imported\lenskit_ItemKNNScorer_citeulike_200.teacher
+      noise:
+        scale: 0.0
+        target: both
+        seed: null
+      format: checkpoint
+    student:
+      framework: recbole
+      backbone: BPRMF
+      model: RRD
+      embedding_dim: 20
+    optimization:
+      epochs: 10
+      batch_size: 2048
+      learning_rate: 0.001
+      l2_reg: 0.0001
+      validation_rate: 10
+      validation_metric: ndcg@20
+      grid_search:
+        enabled: false
+      optuna:
+        enabled: false
+    distillation:
+      strategy: RRD
+      lambda_rrd: 0.1
+      lambda_de: 0.0
+      rrd:
+        interesting_size: 40
+        uninteresting_size: 50
+        temperature: 1.0
+        teacher_topk: 500
+    runtime:
+      seed: 42
+      device: null
+      num_workers: 4
+      output_path: results/recdistill/rrd/lenskit/ItemKNNScorer/recbole/BPRMF/citeulike/fixed/wei/lenskit_ItemKNNScorer_recbole_BPRMF_citeulike_20.distilled_student
+      save_every: 0
+      wandb:
+        enabled: false
+      extra_args: []
+    evaluation:
+      enabled: true
+      k: 20
+      every: 5
+      batch_size: 256
+      val_only: false
+      selection_split: val
+      selection_metric: ndcg
+      assert_no_train_leak: true
+    early_stopping:
+      enabled: true
+      mode: val_metric
+      metric: ndcg
+      patience: 10
+      min_delta: 0.0

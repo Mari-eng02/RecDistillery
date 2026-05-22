@@ -123,13 +123,30 @@ def _safe_slug(value: str, max_len: int = 80) -> str:
     return cleaned[:max_len] if len(cleaned) > max_len else cleaned
 
 
+def _teacher_model_from_path(teacher_conf: dict) -> str | None:
+    raw_path = teacher_conf.get("path")
+    if not raw_path:
+        return None
+    parts = Path(str(raw_path)).parts
+    lowered = [part.lower() for part in parts]
+    try:
+        teachers_idx = lowered.index("teachers")
+        return parts[teachers_idx + 2]
+    except (ValueError, IndexError):
+        return Path(str(raw_path)).stem or None
+
+
+def _teacher_model_label(teacher_conf: dict) -> str:
+    return str(_teacher_model_from_path(teacher_conf) or teacher_conf.get("model") or "teacher")
+
+
 def _experiment_tuple(train_conf: dict) -> tuple[str, str, str, str, str, str]:
     student_conf = train_conf.get("student", {}) or {}
     teacher_conf = train_conf.get("teacher", {}) or {}
     dataset = str(train_conf.get("dataset") or "dataset")
     distiller = str(student_conf.get("model") or "DE")
     teacher_framework = str(teacher_conf.get("framework") or "recbole")
-    teacher = str(teacher_conf.get("model") or "teacher")
+    teacher = _teacher_model_label(teacher_conf)
     student_framework = str(student_conf.get("framework") or "recbole")
     student = str(student_conf.get("backbone") or "student")
     return (
@@ -154,7 +171,7 @@ def _distilled_path_from_train_conf(train_conf: dict, *, strategy: str) -> Path:
     path = distilled_student_artifact_path(
         distiller=str(student_conf.get("model") or "DE"),
         teacher_framework=teacher_conf.get("framework"),
-        teacher_model=str(teacher_conf.get("model") or "teacher"),
+        teacher_model=_teacher_model_label(teacher_conf),
         student_framework=student_conf.get("framework"),
         student_model=str(student_conf.get("backbone") or "student"),
         dataset=dataset,
@@ -175,6 +192,65 @@ def _search_best_output_path(train_conf: dict) -> Path:
     if not path.stem.endswith("_best"):
         path = path.with_name(f"{path.stem}_best{path.suffix}")
     return path
+
+
+def _compose_imported_teacher_experiment(
+    *,
+    dataset_name: str,
+    teacher_path: str,
+    distiller_strategy: str,
+    student_backbone: str,
+    student_framework: str,
+) -> dict:
+    loader = get_config_loader()
+    dataset = loader.load_dataset_config(dataset_name)
+    student_cfg = loader.load_model_config("student", student_backbone, framework=student_framework)
+    template = copy.deepcopy(loader._load_yaml(loader.root / "experiments" / f"recdistill_template_{distiller_strategy}.yaml"))
+    distiller_cfg = loader._load_yaml(loader.root / "distillers" / f"{distiller_strategy}.yaml")
+
+    teacher_model = Path(teacher_path).stem
+    teacher_framework = "imported"
+    parts = Path(teacher_path).parts
+    try:
+        teachers_index = [part.lower() for part in parts].index("teachers")
+        teacher_framework = parts[teachers_index + 1]
+        teacher_model = parts[teachers_index + 2]
+    except (ValueError, IndexError):
+        pass
+
+    template["train_student"]["dataset"] = dataset.name
+    template["train_student"]["teacher"].update(
+        {
+            "framework": teacher_framework,
+            "model": teacher_model,
+            "embedding_dim": student_cfg.embedding_dim + 1,
+            "path": teacher_path,
+            "format": "checkpoint",
+        }
+    )
+    template["train_student"]["student"]["framework"] = student_cfg.framework
+    template["train_student"]["student"]["backbone"] = student_cfg.backbone
+    template["train_student"]["student"]["embedding_dim"] = student_cfg.embedding_dim
+    loader._copy_model_specific_fields(student_cfg, template["train_student"]["student"])
+    template["train_student"]["distillation"].update(distiller_cfg)
+    template["train_student"]["distillation"]["strategy"] = str(
+        template["train_student"]["distillation"].get("strategy", distiller_strategy)
+    ).upper()
+    template["train_student"]["student"]["model"] = template["train_student"]["distillation"]["strategy"]
+    runtime = template["train_student"].setdefault("runtime", {})
+    runtime["output_path"] = str(
+        distilled_student_artifact_path(
+            distiller=distiller_strategy,
+            teacher_framework=teacher_framework,
+            teacher_model=teacher_model,
+            student_framework=student_cfg.framework,
+            student_model=student_cfg.backbone,
+            dataset=dataset.name,
+            embedding_dim=student_cfg.embedding_dim,
+            strategy="fixed",
+        ).relative_to(REPO_ROOT)
+    ).replace("\\", "/")
+    return recdistill_config_to_dict(normalize_recdistill_config(template))
 
 
 def _copy_artifact_with_history(source_path: Path, destination_path: Path) -> None:
@@ -359,14 +435,14 @@ def build_command(config: dict) -> list[str]:
     else:
         _add_arg(cmd, "--teacher-model", teacher_conf.get("model"))
         _add_arg(cmd, "--teacher-embedding-dim", teacher_conf.get("embedding_dim"))
-    _add_arg(cmd, "--teacher-framework", teacher_conf.get("framework"))
-    _add_arg(cmd, "--teacher-format", teacher_conf.get("format"))
-    _add_arg(cmd, "--teacher-adapter", teacher_conf.get("adapter"))
-    _add_arg(cmd, "--teacher-user-embeddings-path", teacher_conf.get("user_embeddings_path"))
-    _add_arg(cmd, "--teacher-item-embeddings-path", teacher_conf.get("item_embeddings_path"))
-    _add_arg(cmd, "--teacher-score-matrix-path", teacher_conf.get("score_matrix_path"))
-    _add_arg(cmd, "--teacher-topk-items-path", teacher_conf.get("topk_items_path"))
-    _add_arg(cmd, "--teacher-topk-scores-path", teacher_conf.get("topk_scores_path"))
+        _add_arg(cmd, "--teacher-framework", teacher_conf.get("framework"))
+        _add_arg(cmd, "--teacher-format", teacher_conf.get("format"))
+        _add_arg(cmd, "--teacher-adapter", teacher_conf.get("adapter"))
+        _add_arg(cmd, "--teacher-user-embeddings-path", teacher_conf.get("user_embeddings_path"))
+        _add_arg(cmd, "--teacher-item-embeddings-path", teacher_conf.get("item_embeddings_path"))
+        _add_arg(cmd, "--teacher-score-matrix-path", teacher_conf.get("score_matrix_path"))
+        _add_arg(cmd, "--teacher-topk-items-path", teacher_conf.get("topk_items_path"))
+        _add_arg(cmd, "--teacher-topk-scores-path", teacher_conf.get("topk_scores_path"))
 
     noise_conf = teacher_conf.get("noise", {}) if isinstance(teacher_conf.get("noise", {}), dict) else {}
     _add_arg(cmd, "--teacher-noise-scale", noise_conf.get("scale", teacher_conf.get("noise_scale")))
@@ -695,12 +771,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Launch RecDistill student training from a validated config.")
     parser.add_argument("--config", help="Config preset or direct YAML/JSON configuration file")
     parser.add_argument("--dataset", help="Dataset name for ConfigLoader composition")
+    parser.add_argument("--teacher-path", help="Imported teacher artifact path")
     parser.add_argument("--teacher-model", "--teacher", dest="teacher_model", help="Teacher model for ConfigLoader composition")
     parser.add_argument("--teacher-framework", default=None, choices=["recbole", "elliot", "lenskit"], help="Teacher framework for ConfigLoader composition")
     parser.add_argument("--distiller", help="Distillation strategy for ConfigLoader composition")
     parser.add_argument("--student-backbone", "--student", dest="student_backbone", help="Student backbone for ConfigLoader composition")
     parser.add_argument("--student-framework", default=None, choices=["recbole", "elliot", "lenskit"], help="Student framework for ConfigLoader composition")
-    parser.add_argument("--output-strategy", choices=["best", "bayesian", "tracked"], help="Output strategy namespace")
+    parser.add_argument("--output-strategy", choices=["fixed", "best", "bayesian", "tracked"], help="Output strategy namespace")
     parser.add_argument("--dry-run", action="store_true", help="Only print the resolved run plan")
     parser.add_argument(
         "--track",
@@ -724,49 +801,77 @@ def main() -> None:
                 )
             config = recdistill_config_to_dict(load_recdistill_config_from_file(config_path))
     else:
-        args.teacher_framework = args.teacher_framework or "recbole"
         args.student_framework = args.student_framework or "recbole"
+        has_imported_teacher = bool(args.teacher_path)
         missing = [
             name
             for name, value in {
                 "--dataset": args.dataset,
-                "--teacher-model": args.teacher_model,
+                "--teacher-path or --teacher-model": args.teacher_path or args.teacher_model,
                 "--distiller": args.distiller,
+                "--student-backbone": args.student_backbone if has_imported_teacher else (args.student_backbone or args.teacher_model),
             }.items()
             if not value
         ]
         if missing:
-            parser.error("--config or the full --dataset/--teacher-model/--distiller set is required")
-        try:
-            validate_distillation_request(
-                teacher_framework=args.teacher_framework,
-                teacher_model=args.teacher_model,
-                student_framework=args.student_framework,
-                student_backbone=args.student_backbone or args.teacher_model,
-                distiller=args.distiller,
-            )
-        except ValueError as exc:
-            parser.error(str(exc))
-        config = recdistill_config_to_dict(
-            load_recdistill_experiment(
+            parser.error("--config or --dataset/--distiller plus either --teacher-path or --teacher-model is required")
+        if has_imported_teacher:
+            if args.teacher_model or args.teacher_framework:
+                parser.error("Use only --teacher-path for imported teachers; do not pass --teacher-model or --teacher-framework.")
+            try:
+                validate_distillation_request(
+                    teacher_framework=None,
+                    teacher_model=None,
+                    student_framework=args.student_framework,
+                    student_backbone=args.student_backbone,
+                    distiller=args.distiller,
+                    validate_teacher=False,
+                )
+            except ValueError as exc:
+                parser.error(str(exc))
+            config = _compose_imported_teacher_experiment(
                 dataset_name=args.dataset,
-                teacher_model=args.teacher_model,
-                teacher_framework=args.teacher_framework,
+                teacher_path=args.teacher_path,
                 distiller_strategy=args.distiller,
                 student_backbone=args.student_backbone,
                 student_framework=args.student_framework,
             )
-        )
+            teacher_label = Path(args.teacher_path).stem
+            teacher_framework_label = "imported"
+        else:
+            args.teacher_framework = args.teacher_framework or "recbole"
+            try:
+                validate_distillation_request(
+                    teacher_framework=args.teacher_framework,
+                    teacher_model=args.teacher_model,
+                    student_framework=args.student_framework,
+                    student_backbone=args.student_backbone or args.teacher_model,
+                    distiller=args.distiller,
+                )
+            except ValueError as exc:
+                parser.error(str(exc))
+            config = recdistill_config_to_dict(
+                load_recdistill_experiment(
+                    dataset_name=args.dataset,
+                    teacher_model=args.teacher_model,
+                    teacher_framework=args.teacher_framework,
+                    distiller_strategy=args.distiller,
+                    student_backbone=args.student_backbone,
+                    student_framework=args.student_framework,
+                )
+            )
+            teacher_label = args.teacher_model
+            teacher_framework_label = args.teacher_framework
         preset_path = get_config_loader().save_generated_preset(
             kind="recdistill",
             family="generated",
-            name=f"{args.distiller}_{args.teacher_framework}_{args.teacher_model}_{args.student_framework}_{args.student_backbone or args.teacher_model}_{args.dataset}",
+            name=f"{args.distiller}_{teacher_framework_label}_{teacher_label}_{args.student_framework}_{args.student_backbone or teacher_label}_{args.dataset}",
             path_parts=[
                 args.distiller,
-                args.teacher_framework,
-                args.teacher_model,
+                teacher_framework_label,
+                teacher_label,
                 args.student_framework,
-                args.student_backbone or args.teacher_model,
+                args.student_backbone or teacher_label,
                 args.dataset,
             ],
             config=config,

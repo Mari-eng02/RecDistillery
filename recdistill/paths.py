@@ -96,12 +96,13 @@ def teacher_artifact_path(
     model: str,
     dataset: str,
     embedding_dim: int,
+    strategy: str = "fixed",
 ) -> Path:
     framework_slug = _framework_slug(framework)
     model_name = _model_label(model)
     dataset_slug = _dataset_slug(dataset)
     file_name = f"{framework_slug}_{model_name}_{dataset_slug}_{int(embedding_dim)}{TEACHER_EXT}"
-    return RESULTS_ROOT / "teachers" / framework_slug / model_name / dataset_slug / "best" / "wei" / file_name
+    return RESULTS_ROOT / "teachers" / framework_slug / model_name / dataset_slug / str(strategy).strip().lower() / "wei" / file_name
 
 
 def imported_teacher_artifact_path(
@@ -115,7 +116,7 @@ def imported_teacher_artifact_path(
     model_name = _model_label(model)
     dataset_slug = _dataset_slug(dataset)
     file_name = f"{framework_slug}_{model_name}_{dataset_slug}_{int(embedding_dim)}{TEACHER_EXT}"
-    return RESULTS_ROOT / "teachers" / framework_slug / model_name / dataset_slug / "wei" / file_name
+    return RESULTS_ROOT / "teachers" / framework_slug / model_name / dataset_slug / "imported" / file_name
 
 
 def student_artifact_path(
@@ -124,12 +125,13 @@ def student_artifact_path(
     model: str,
     dataset: str,
     embedding_dim: int,
+    strategy: str = "fixed",
 ) -> Path:
     framework_slug = _framework_slug(framework)
     model_name = _model_label(model)
     dataset_slug = _dataset_slug(dataset)
     file_name = f"{framework_slug}_{model_name}_{dataset_slug}_{int(embedding_dim)}{STUDENT_EXT}"
-    return RESULTS_ROOT / "students" / framework_slug / model_name / dataset_slug / "best" / "wei" / file_name
+    return RESULTS_ROOT / "students" / framework_slug / model_name / dataset_slug / str(strategy).strip().lower() / "wei" / file_name
 
 
 def distilled_student_artifact_path(
@@ -141,7 +143,7 @@ def distilled_student_artifact_path(
     student_model: str,
     dataset: str,
     embedding_dim: int,
-    strategy: str = "best",
+    strategy: str = "fixed",
 ) -> Path:
     distiller_name = distiller_slug(distiller)
     teacher_framework_slug = _framework_slug(teacher_framework)
@@ -184,11 +186,19 @@ def resolve_teacher_checkpoint(
         raise ValueError(
             "When teacher_path is not set, both teacher_model and teacher_embedding_dim are required."
         )
-    trained_path = teacher_artifact_path(
+    fixed_path = teacher_artifact_path(
         framework=teacher_framework,
         model=teacher_model,
         dataset=dataset,
         embedding_dim=teacher_embedding_dim,
+        strategy="fixed",
+    )
+    best_path = teacher_artifact_path(
+        framework=teacher_framework,
+        model=teacher_model,
+        dataset=dataset,
+        embedding_dim=teacher_embedding_dim,
+        strategy="best",
     )
     imported_path = imported_teacher_artifact_path(
         framework=teacher_framework,
@@ -196,7 +206,11 @@ def resolve_teacher_checkpoint(
         dataset=dataset,
         embedding_dim=teacher_embedding_dim,
     )
-    return imported_path if imported_path.exists() else trained_path
+    if imported_path.exists():
+        return imported_path
+    if fixed_path.exists():
+        return fixed_path
+    return best_path
 
 
 def resolve_student_checkpoint(
@@ -209,7 +223,7 @@ def resolve_student_checkpoint(
     teacher_framework: str | None = None,
     student_framework: str | None = None,
     output_path: str | Path | None = None,
-    strategy: str = "best",
+    strategy: str = "fixed",
 ) -> Path:
     if output_path is not None:
         return Path(output_path)
@@ -224,6 +238,7 @@ def resolve_student_checkpoint(
             model=student_backbone,
             dataset=dataset,
             embedding_dim=student_embedding_dim,
+            strategy=strategy,
         )
 
     if teacher_model is None or student_backbone is None:
@@ -287,7 +302,7 @@ def performance_path(
     distiller: str,
     teacher_model: str | None,
     student_backbone: str | None = None,
-    phase: str = "best",
+    phase: str = "fixed",
     filename: str = "metrics.json",
 ) -> Path:
     teacher_slug = model_slug(teacher_model) if teacher_model is not None else "teacher"
@@ -318,6 +333,7 @@ def teacher_weights_path(
         model=model,
         dataset=dataset,
         embedding_dim=embedding_dim,
+        strategy=phase,
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     return str(path)
@@ -328,7 +344,7 @@ def student_weights_path(
     teacher: str,
     dataset: str,
     embedding_dim: int,
-    phase: str = "best",
+    phase: str = "fixed",
     student: str | None = None,
 ) -> str:
     """Compatibility helper for exported distilled student payloads."""
@@ -356,7 +372,7 @@ def resolve_student_checkpoint_from_args(args: Any, distiller_name: str) -> Path
         student_framework=getattr(args, "student_framework", None),
         student_embedding_dim=args.student_embedding_dim,
         output_path=args.output_path,
-        strategy=getattr(args, "output_strategy", "best"),
+        strategy=getattr(args, "output_strategy", "fixed"),
     )
 
 

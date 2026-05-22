@@ -83,14 +83,14 @@ def _bootstrap_local_recdistill():
 
 
 try:
-    from recdistill.data.datarec_loader import load_interaction_dataset
+    from recdistill.data.datarec_loader import load_interaction_dataset, resolve_teacher_dataset_mappings
     from recdistill.data.interactions import InteractionDataset
     from recdistill.samplers.teacher_topk import TeacherTopKProvider
     from recdistill.teachers import load_teacher_state
 except ModuleNotFoundError as exc:
     if exc.name and exc.name.startswith("recdistill"):
         InteractionDataset, TeacherTopKProvider, load_teacher_state = _bootstrap_local_recdistill()
-        from recdistill.data.datarec_loader import load_interaction_dataset
+        from recdistill.data.datarec_loader import load_interaction_dataset, resolve_teacher_dataset_mappings
     else:
         raise
 
@@ -131,10 +131,15 @@ def main() -> None:
     print(f"  ✓ Embedding dimension: {teacher_state.embedding_dim if teacher_state.has_embeddings else 'none'}")
 
     print(f"\n[2/3] Loading dataset...")
+    user_mapping, item_mapping, mapping_source = resolve_teacher_dataset_mappings(
+        teacher_state.metadata,
+        dataset_name=args.dataset,
+    )
+    print(f"  Dataset mapping source: {mapping_source}")
     dataset = _load_dataset(
         dataset_name=args.dataset,
-        user_mapping=teacher_state.metadata.get("public_to_local_user_id"),
-        item_mapping=teacher_state.metadata.get("public_to_local_item_id"),
+        user_mapping=user_mapping,
+        item_mapping=item_mapping,
     )
     print(f"  ✓ Dataset: {dataset.num_users} users × {dataset.num_items} items")
     print(f"  ✓ Interactions: {len(dataset.interactions)}")

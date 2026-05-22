@@ -117,7 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device", default=None, help="Torch device, e.g. cpu, cuda, cuda:0")
     parser.add_argument("--num-workers", type=int, default=0, help="DataLoader workers")
     parser.add_argument("--output-path", default=None, help="Optional explicit output checkpoint path")
-    parser.add_argument("--output-strategy", default="best", choices=["best", "bayesian", "tracked"], help="RecDistill output strategy directory used when --output-path is not set")
+    parser.add_argument("--output-strategy", default="fixed", choices=["fixed", "best", "bayesian", "tracked"], help="RecDistill output strategy directory used when --output-path is not set")
     parser.add_argument("--save-every", type=int, default=0, help="Save checkpoint every N epochs (0 disables)")
     parser.add_argument("--skip-eval", action="store_true", help="Disable validation/test evaluation during training")
     parser.add_argument("--eval-k", type=int, default=20, help="Top-k for recommendation metrics")

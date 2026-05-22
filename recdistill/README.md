@@ -147,47 +147,45 @@ Teachers can be represented in three ways:
 - score-based: dense precomputed user-item score matrix
 - ranking/top-k-based: precomputed top-k items, optionally with top-k scores
 
-Import a teacher trained by Elliot and saved as `.teacher`:
+Only three import adapters are registered:
+
+- `CheckpointAdapter` for generic torch checkpoints with serialized teacher state, embeddings, scores, or top-k tensors.
+- `PredictionsJsonAdapter` for JSON recommendation exports.
+- `RecBolePthAdapter` for `.pth` checkpoints containing user/item embedding tensors.
+
+Import a generic checkpoint:
 
 ```powershell
 python scripts\recdistill\import_teacher.py `
-  --input elliot_teacher.teacher `
-  --framework elliot `
-  --output imported_elliot_teacher.teacher
+  --input teacher_checkpoint.pt `
+  --format checkpoint `
+  --framework external `
+  --model-name ExternalTeacher `
+  --dataset citeulike `
+  --embedding-dim 200
 ```
 
-This path is useful when the teacher artifact already exists but should be
-normalized into the current RecDistill native `.teacher` payload before
-distillation.
-
-Import numpy embeddings:
+Import precomputed recommendation lists:
 
 ```powershell
 python scripts\recdistill\import_teacher.py `
-  --user-embeddings user.npy `
-  --item-embeddings item.npy `
+  --input predictions.json `
+  --format predictions_json `
+  --framework external `
+  --model-name ExternalTeacher `
+  --dataset citeulike `
+  --embedding-dim 200
+```
+
+Import a `.pth` checkpoint with user/item embeddings:
+
+```powershell
+python scripts\recdistill\import_teacher.py `
+  --input model.pth `
+  --format recbole_pth `
+  --framework recbole `
   --model-name BPRMF `
-  --output imported.teacher
-```
-
-Import a dense score matrix:
-
-```powershell
-python scripts\recdistill\import_teacher.py `
-  --score-matrix teacher_scores.npy `
-  --model-name EASE `
-  --output imported.teacher
-```
-
-Import precomputed top-k rankings:
-
-```powershell
-python scripts\recdistill\import_teacher.py `
-  --topk-items teacher_topk_items.npy `
-  --topk-scores teacher_topk_scores.npy `
-  --metadata num_items=12345 `
-  --model-name MostPop `
-  --output imported.teacher
+  --dataset citeulike
 ```
 
 List teacher import adapters:
@@ -238,7 +236,7 @@ A complete experiment usually runs in this order:
 Teacher checkpoints use:
 
 ```text
-format_version: recdistill.teacher.v1
+format_version: recdistill.teacher.v2
 ```
 
 They store embeddings or a serialized scorer, metadata, mappings, and import

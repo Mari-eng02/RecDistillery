@@ -133,6 +133,7 @@ class RuntimeConfig(BaseModel):
     device: Optional[str] = Field(default=None)
     num_workers: int = Field(default=4)
     output_path: Optional[str] = Field(default=None)
+    output_strategy: str = Field(default="fixed")
     save_every: int = Field(default=0)
     gpu: int = Field(default=0)
     backend: str = Field(default="pytorch")

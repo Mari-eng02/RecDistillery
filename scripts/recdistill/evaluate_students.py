@@ -22,7 +22,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from recdistill.checkpointing import load_student_checkpoint  # noqa: E402
-from recdistill.data.datarec_loader import load_eval_split, load_train_dataset  # noqa: E402
+from recdistill.data.datarec_loader import load_eval_split, load_train_dataset, resolve_teacher_dataset_mappings  # noqa: E402
 from recdistill.evaluation import evaluate_student  # noqa: E402
 from recdistill.factories import build_student_model  # noqa: E402
 from recdistill.paths import resolve_student_checkpoint  # noqa: E402
@@ -85,11 +85,11 @@ def _load_mappings(config: dict[str, Any], payload: dict[str, Any]) -> tuple[dic
         return None, None, None
 
     teacher_state = load_teacher_state(teacher_path, device="cpu")
-    return (
-        teacher_state.metadata.get("public_to_local_user_id"),
-        teacher_state.metadata.get("public_to_local_item_id"),
-        str(teacher_path),
+    user_mapping, item_mapping, mapping_source = resolve_teacher_dataset_mappings(
+        teacher_state.metadata,
+        dataset_name=str(config.get("dataset") or payload.get("dataset") or ""),
     )
+    return user_mapping, item_mapping, f"{teacher_path} ({mapping_source})"
 
 
 def _build_model(
@@ -294,7 +294,7 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python scripts/recdistill/evaluate_students.py --path results/students/recbole/BPRMF/citeulike/best/wei/recbole_BPRMF_citeulike_64.student
+  python scripts/recdistill/evaluate_students.py --path results/students/recbole/BPRMF/citeulike/fixed/wei/recbole_BPRMF_citeulike_64.student
 
   python scripts/recdistill/evaluate_students.py ^
     --dataset citeulike ^

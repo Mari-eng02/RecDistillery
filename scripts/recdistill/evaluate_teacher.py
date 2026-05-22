@@ -79,6 +79,7 @@ try:
     from recdistill.data.datarec_loader import (
         load_eval_split as _load_eval_split_datarec,
         load_train_dataset as _load_train_dataset_datarec,
+        resolve_teacher_dataset_mappings,
     )
     from recdistill.data.interactions import InteractionDataset
     from recdistill.teachers import load_teacher_state
@@ -88,6 +89,7 @@ except ModuleNotFoundError as exc:
         from recdistill.data.datarec_loader import (
             load_eval_split as _load_eval_split_datarec,
             load_train_dataset as _load_train_dataset_datarec,
+            resolve_teacher_dataset_mappings,
         )
     else:
         raise
@@ -349,8 +351,11 @@ def main() -> None:
     teacher_state = load_teacher_state(teacher_path, device="cpu")
     print(f"Teacher users/items: {teacher_state.num_users}/{teacher_state.num_items}")
 
-    user_mapping = teacher_state.metadata.get("public_to_local_user_id")
-    item_mapping = teacher_state.metadata.get("public_to_local_item_id")
+    user_mapping, item_mapping, mapping_source = resolve_teacher_dataset_mappings(
+        teacher_state.metadata,
+        dataset_name=args.dataset,
+    )
+    print(f"Dataset mapping source: {mapping_source}")
 
     train_dataset, dropped_train = _build_train_dataset(
         dataset_name=args.dataset,

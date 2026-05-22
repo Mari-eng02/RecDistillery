@@ -8,12 +8,15 @@ fi
 set -euo pipefail
 
 usage() {
-  echo "Usage: bash experiments/recdistill/train_distiller.sh <distiller> <dataset> [teacher_framework] [teacher_model|ALL] [student_framework] [student_backbone|SAME|ALL] [gpu] [dry_run]"
+  echo "Usage:"
+  echo "  bash experiments/recdistill/train_distiller.sh <distiller> <dataset> [teacher_framework] [teacher_model|ALL] [student_framework] [student_backbone|SAME|ALL] [gpu] [dry_run]"
+  echo "  bash experiments/recdistill/train_distiller.sh <distiller> <dataset> <teacher_path.teacher> <student_framework> <student_backbone> [gpu] [dry_run]"
   echo
   echo "If teacher_framework is omitted, recbole is used."
   echo "If teacher_model is omitted or ALL, all teacher models for that framework are run sequentially."
   echo "If student_framework is omitted, the teacher framework is used."
   echo "If student_backbone is omitted or SAME, each student uses the same backbone name as its teacher."
+  echo "For imported teachers, pass only the .teacher path; teacher framework/model are inferred by Python."
   echo "By default the runner is detached in background (nohup)."
   echo "Set DISTILLER_DETACH=0 to run in foreground."
   echo
@@ -22,6 +25,7 @@ usage() {
   echo "  bash experiments/recdistill/train_distiller.sh DE citeulike recbole ALL recbole SAME 0 0"
   echo "  bash experiments/recdistill/train_distiller.sh DE citeulike recbole BPRMF lenskit LGCN 0 1"
   echo "  bash experiments/recdistill/train_distiller.sh DE citeulike elliot NMF elliot SAME auto 1"
+  echo "  bash experiments/recdistill/train_distiller.sh RRD citeulike results/teachers/lenskit/ItemKNNScorer/citeulike/imported/lenskit_ItemKNNScorer_citeulike_200.teacher recbole BPRMF 0 1"
   echo "  DISTILLER_DETACH=0 bash experiments/recdistill/train_distiller.sh DE citeulike recbole BPRMF recbole LGCN auto 1"
 }
 
@@ -35,22 +39,47 @@ INTERNAL_RUN="${1:-}"
 if [ "${INTERNAL_RUN}" = "--internal-run" ]; then
   DISTILLER="${2:-DE}"
   DATASET="${3:-citeulike}"
-  TEACHER_FRAMEWORK="${4:-recbole}"
-  TEACHER_MODEL="${5:-ALL}"
-  STUDENT_FRAMEWORK="${6:-${TEACHER_FRAMEWORK}}"
-  STUDENT_MODEL="${7:-SAME}"
-  GPU="${8:-0}"
-  DRY_RUN="${9:-0}"
-  RUN_ID="${10:-$(date +%Y%m%d_%H%M%S)}"
+  TEACHER_ARG="${4:-recbole}"
+  if [[ "${TEACHER_ARG}" == *.teacher || "${TEACHER_ARG}" == */* || "${TEACHER_ARG}" == *\\* ]]; then
+    TEACHER_PATH="${TEACHER_ARG}"
+    TEACHER_FRAMEWORK="imported"
+    TEACHER_MODEL="$(basename "${TEACHER_PATH}" .teacher)"
+    STUDENT_FRAMEWORK="${5:-recbole}"
+    STUDENT_MODEL="${6:-BPRMF}"
+    GPU="${7:-0}"
+    DRY_RUN="${8:-0}"
+    RUN_ID="${9:-$(date +%Y%m%d_%H%M%S)}"
+  else
+    TEACHER_PATH=""
+    TEACHER_FRAMEWORK="${TEACHER_ARG}"
+    TEACHER_MODEL="${5:-ALL}"
+    STUDENT_FRAMEWORK="${6:-${TEACHER_FRAMEWORK}}"
+    STUDENT_MODEL="${7:-SAME}"
+    GPU="${8:-0}"
+    DRY_RUN="${9:-0}"
+    RUN_ID="${10:-$(date +%Y%m%d_%H%M%S)}"
+  fi
 else
   DISTILLER="${1:-DE}"
   DATASET="${2:-citeulike}"
-  TEACHER_FRAMEWORK="${3:-recbole}"
-  TEACHER_MODEL="${4:-ALL}"
-  STUDENT_FRAMEWORK="${5:-${TEACHER_FRAMEWORK}}"
-  STUDENT_MODEL="${6:-SAME}"
-  GPU="${7:-0}"
-  DRY_RUN="${8:-0}"
+  TEACHER_ARG="${3:-recbole}"
+  if [[ "${TEACHER_ARG}" == *.teacher || "${TEACHER_ARG}" == */* || "${TEACHER_ARG}" == *\\* ]]; then
+    TEACHER_PATH="${TEACHER_ARG}"
+    TEACHER_FRAMEWORK="imported"
+    TEACHER_MODEL="$(basename "${TEACHER_PATH}" .teacher)"
+    STUDENT_FRAMEWORK="${4:-recbole}"
+    STUDENT_MODEL="${5:-BPRMF}"
+    GPU="${6:-0}"
+    DRY_RUN="${7:-0}"
+  else
+    TEACHER_PATH=""
+    TEACHER_FRAMEWORK="${TEACHER_ARG}"
+    TEACHER_MODEL="${4:-ALL}"
+    STUDENT_FRAMEWORK="${5:-${TEACHER_FRAMEWORK}}"
+    STUDENT_MODEL="${6:-SAME}"
+    GPU="${7:-0}"
+    DRY_RUN="${8:-0}"
+  fi
   RUN_ID="$(date +%Y%m%d_%H%M%S)"
 fi
 
@@ -80,8 +109,12 @@ TEACHER_FRAMEWORK_LC="$(echo "${TEACHER_FRAMEWORK}" | tr '[:upper:]' '[:lower:]'
 TEACHER_MODEL_LC="$(echo "${TEACHER_MODEL}" | tr '[:upper:]' '[:lower:]')"
 STUDENT_FRAMEWORK_LC="$(echo "${STUDENT_FRAMEWORK}" | tr '[:upper:]' '[:lower:]')"
 STUDENT_MODEL_LC="$(echo "${STUDENT_MODEL}" | tr '[:upper:]' '[:lower:]')"
+IMPORTED_TEACHER=0
+if [ -n "${TEACHER_PATH:-}" ]; then
+  IMPORTED_TEACHER=1
+fi
 
-if [ ! -d "${TEACHER_CONFIG_DIR}/${TEACHER_FRAMEWORK_LC}" ]; then
+if [ "${IMPORTED_TEACHER}" = "0" ] && [ ! -d "${TEACHER_CONFIG_DIR}/${TEACHER_FRAMEWORK_LC}" ]; then
   echo "Teacher framework config directory not found: ${TEACHER_CONFIG_DIR}/${TEACHER_FRAMEWORK_LC}"
   exit 1
 fi
@@ -95,9 +128,15 @@ if [ "${INTERNAL_RUN}" != "--internal-run" ]; then
   RUNNER_LOG="${LOG_DIR}/train_distiller_${DISTILLER}_${DATASET}_teacher-${TEACHER_FRAMEWORK}-${TEACHER_MODEL}_student-${STUDENT_FRAMEWORK}-${STUDENT_MODEL}_${RUN_ID}.runner.log"
 
   if [ "${DETACH}" = "1" ]; then
-    nohup bash "${REPO_ROOT}/experiments/recdistill/train_distiller.sh" --internal-run \
-      "${DISTILLER}" "${DATASET}" "${TEACHER_FRAMEWORK}" "${TEACHER_MODEL}" "${STUDENT_FRAMEWORK}" "${STUDENT_MODEL}" "${GPU}" "${DRY_RUN}" "${RUN_ID}" \
-      > "${RUNNER_LOG}" 2>&1 < /dev/null &
+    if [ "${IMPORTED_TEACHER}" = "1" ]; then
+      nohup bash "${REPO_ROOT}/experiments/recdistill/train_distiller.sh" --internal-run \
+        "${DISTILLER}" "${DATASET}" "${TEACHER_PATH}" "${STUDENT_FRAMEWORK}" "${STUDENT_MODEL}" "${GPU}" "${DRY_RUN}" "${RUN_ID}" \
+        > "${RUNNER_LOG}" 2>&1 < /dev/null &
+    else
+      nohup bash "${REPO_ROOT}/experiments/recdistill/train_distiller.sh" --internal-run \
+        "${DISTILLER}" "${DATASET}" "${TEACHER_FRAMEWORK}" "${TEACHER_MODEL}" "${STUDENT_FRAMEWORK}" "${STUDENT_MODEL}" "${GPU}" "${DRY_RUN}" "${RUN_ID}" \
+        > "${RUNNER_LOG}" 2>&1 < /dev/null &
+    fi
 
     PID=$!
 
@@ -120,9 +159,15 @@ if [ "${INTERNAL_RUN}" != "--internal-run" ]; then
     echo "GPU: ${GPU}"
     echo "Dry-run: ${DRY_RUN}"
     echo "Runner log: ${RUNNER_LOG}"
-    bash "${REPO_ROOT}/experiments/recdistill/train_distiller.sh" --internal-run \
-      "${DISTILLER}" "${DATASET}" "${TEACHER_FRAMEWORK}" "${TEACHER_MODEL}" "${STUDENT_FRAMEWORK}" "${STUDENT_MODEL}" "${GPU}" "${DRY_RUN}" "${RUN_ID}" \
-      | tee "${RUNNER_LOG}"
+    if [ "${IMPORTED_TEACHER}" = "1" ]; then
+      bash "${REPO_ROOT}/experiments/recdistill/train_distiller.sh" --internal-run \
+        "${DISTILLER}" "${DATASET}" "${TEACHER_PATH}" "${STUDENT_FRAMEWORK}" "${STUDENT_MODEL}" "${GPU}" "${DRY_RUN}" "${RUN_ID}" \
+        | tee "${RUNNER_LOG}"
+    else
+      bash "${REPO_ROOT}/experiments/recdistill/train_distiller.sh" --internal-run \
+        "${DISTILLER}" "${DATASET}" "${TEACHER_FRAMEWORK}" "${TEACHER_MODEL}" "${STUDENT_FRAMEWORK}" "${STUDENT_MODEL}" "${GPU}" "${DRY_RUN}" "${RUN_ID}" \
+        | tee "${RUNNER_LOG}"
+    fi
   fi
   exit 0
 fi
@@ -132,14 +177,20 @@ export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 export PYTHONUNBUFFERED=1
 
 list_available_configs() {
-  echo "Available teacher model configs:"
-  find "${TEACHER_CONFIG_DIR}/${TEACHER_FRAMEWORK_LC}" -maxdepth 1 -type f -name '*.yaml' -print | sed "s#${REPO_ROOT}/##" | sort
-  echo
+  if [ "${IMPORTED_TEACHER}" = "0" ]; then
+    echo "Available teacher model configs:"
+    find "${TEACHER_CONFIG_DIR}/${TEACHER_FRAMEWORK_LC}" -maxdepth 1 -type f -name '*.yaml' -print | sed "s#${REPO_ROOT}/##" | sort
+    echo
+  fi
   echo "Available student model configs:"
   find "${STUDENT_CONFIG_DIR}/${STUDENT_FRAMEWORK_LC}" -maxdepth 1 -type f -name '*.yaml' -print | sed "s#${REPO_ROOT}/##" | sort
 }
 
 discover_teacher_models() {
+  if [ "${IMPORTED_TEACHER}" = "1" ]; then
+    echo "${TEACHER_MODEL}"
+    return
+  fi
   find "${TEACHER_CONFIG_DIR}/${TEACHER_FRAMEWORK_LC}" -maxdepth 1 -type f -name '*.yaml' \
     | sed -E "s#^${TEACHER_CONFIG_DIR}/${TEACHER_FRAMEWORK_LC}/(.*)\.yaml#\1#" \
     | sort
@@ -162,7 +213,7 @@ run_one_pair() {
   TEACHER_NAME_LC="$(echo "${TEACHER_NAME}" | tr '[:upper:]' '[:lower:]')"
   STUDENT_NAME_LC="$(echo "${STUDENT_NAME}" | tr '[:upper:]' '[:lower:]')"
 
-  if [ ! -f "${TEACHER_CONFIG_DIR}/${TEACHER_FRAMEWORK_LC}/${TEACHER_NAME_LC}.yaml" ]; then
+  if [ "${IMPORTED_TEACHER}" = "0" ] && [ ! -f "${TEACHER_CONFIG_DIR}/${TEACHER_FRAMEWORK_LC}/${TEACHER_NAME_LC}.yaml" ]; then
     echo "Teacher model config not found: ${TEACHER_CONFIG_DIR}/${TEACHER_FRAMEWORK_LC}/${TEACHER_NAME_LC}.yaml"
     list_available_configs
     return 1
@@ -180,13 +231,16 @@ run_one_pair() {
   CMD=(
     python3 -u scripts/recdistill/train_student_from_config.py
     --dataset "${DATASET_LC}"
-    --teacher-framework "${TEACHER_FRAMEWORK_LC}"
-    --teacher-model "${TEACHER_NAME_LC}"
     --distiller "${DISTILLER_LC}"
     --student-framework "${STUDENT_FRAMEWORK_LC}"
     --student-backbone "${STUDENT_NAME_LC}"
-    --output-strategy best
+    --output-strategy fixed
   )
+  if [ "${IMPORTED_TEACHER}" = "1" ]; then
+    CMD+=(--teacher-path "${TEACHER_PATH}")
+  else
+    CMD+=(--teacher-framework "${TEACHER_FRAMEWORK_LC}" --teacher-model "${TEACHER_NAME_LC}")
+  fi
 
   if [ "${DRY_RUN}" = "1" ]; then
     CMD+=(--dry-run)
@@ -229,7 +283,9 @@ echo "Run ID: ${RUN_ID}"
 echo
 
 TEACHERS=()
-if [ "${TEACHER_MODEL_LC}" = "all" ]; then
+if [ "${IMPORTED_TEACHER}" = "1" ]; then
+  TEACHERS=("${TEACHER_MODEL}")
+elif [ "${TEACHER_MODEL_LC}" = "all" ]; then
   while IFS= read -r _model; do
     [ -n "${_model}" ] && TEACHERS+=("${_model}")
   done < <(discover_teacher_models)

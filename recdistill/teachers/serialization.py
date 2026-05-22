@@ -109,7 +109,7 @@ def teacher_state_from_payload(payload: dict[str, Any]) -> TeacherState:
     ):
         if key in payload and payload[key] is not None:
             metadata.setdefault(key, payload[key])
-    metadata.setdefault("source", "recdistill_native_teacher")
+    metadata.setdefault("source", "checkpoint_teacher")
     return TeacherState(
         user_embeddings=(
             torch.as_tensor(payload["user_embeddings"], dtype=torch.float32)
