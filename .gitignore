@@ -215,5 +215,5 @@ Miniconda3-latest-Linux-x86_64.sh
 
 # Local experiment outputs
 results/
-data/
+/data/
 checkpoints/
