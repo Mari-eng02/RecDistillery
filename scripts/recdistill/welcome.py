@@ -18,7 +18,6 @@ if str(REPO_ROOT) not in sys.path:
 from recdistill.supported_models import (  # noqa: E402
     REPORTED_TOTAL_TORCH_COMPATIBLE_MODELS,
     torch_compatible_by_framework,
-    torch_compatible_summary_rows,
     trainable_by_framework,
 )
 
@@ -36,21 +35,6 @@ RESET = "\033[0m"
 
 def _bold(text: str) -> str:
     return f"{BOLD}{text}{RESET}"
-
-
-def _print_summary() -> None:
-    print(_bold("Imported torch-compatible model definitions"))
-    print("----------------------------------------------------------")
-    print("Framework   Total imported   Torch-compatible   Percentage")
-    for row in torch_compatible_summary_rows():
-        framework_name = FRAMEWORK_DISPLAY_NAMES.get(row["framework"], row["framework"])
-        print(
-            f"{framework_name:<11} "
-            f"{row['total_imported']:>14}   "
-            f"{row['torch_compatible']:>16}   "
-            f"{row['percentage']:>10}"
-        )
-    print()
 
 
 def _print_torch_compatible_models() -> None:
@@ -101,10 +85,9 @@ def _print_import_note() -> None:
     print(_bold("External teacher import"))
     print("-------------------------------------------------------------------")
     print("A teacher does not need to be torch-based if it is already trained.")
-    print("Convert it to .teacher with one of:")
-    print("  - user/item embeddings")
-    print("  - dense score matrix")
-    print("  - top-k item and score arrays")
+    print("To import it, provide one of:")
+    print("  - predictions in a JSON file")
+    print("  - a trained model checkpoint in .pt or .pth format")
     print()
     print("Then, import it with the following entry point:")
     print("  python scripts/recdistill/import_teacher.py --help")
@@ -119,7 +102,6 @@ def main() -> None:
     print(_bold("Welcome to RecDistillery framework!"))
     print("=====================================")
     print()
-    _print_summary()
     _print_torch_compatible_models()
     _print_adapter_ready(verbose=args.verbose)
     _print_import_note()

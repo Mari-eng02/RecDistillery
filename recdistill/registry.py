@@ -10,6 +10,8 @@ MODEL_ALIASES = {
     "ngcf": "NGCF",
     "dgcf": "DGCF",
     "sgl": "SGL",
+    "ultragcn": "ULTRAGCN",
+    "ultra_gcn": "ULTRAGCN",
     "spectralcf": "SPECTRALCF",
     "spectral_cf": "SPECTRALCF",
     "nmf": "NMF",
@@ -31,7 +33,7 @@ DISTILLER_ALIASES = {
     "full_topology_distillation": "FTD",
 }
 
-SUPPORTED_BACKBONES = frozenset({"BPRMF", "LINE", "LGCN", "NGCF", "DGCF", "SGL", "SPECTRALCF", "NMF"})
+SUPPORTED_BACKBONES = frozenset({"BPRMF", "LINE", "LGCN", "NGCF", "DGCF", "SGL", "ULTRAGCN", "SPECTRALCF", "NMF"})
 SUPPORTED_DISTILLERS = frozenset({"DE", "RRD", "UNKD", "HTD", "FTD"})
 
 

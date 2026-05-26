@@ -72,14 +72,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--teacher-score-matrix-path", default=None, help="Optional dense user-item score matrix .npy for generic teacher import")
     parser.add_argument("--teacher-topk-items-path", default=None, help="Optional top-k item ids .npy for generic teacher import")
     parser.add_argument("--teacher-topk-scores-path", default=None, help="Optional top-k scores .npy for generic teacher import")
-    parser.add_argument("--teacher-noise-scale", type=float, default=0.0, help="Relative Gaussian noise scale alpha for teacher embeddings (noise_std=alpha*base_std)")
-    parser.add_argument("--teacher-noise-target", type=str, default="both", choices=["both", "user", "item"], help="Which teacher embeddings to perturb")
-    parser.add_argument("--teacher-noise-seed", type=int, default=None, help="Optional seed used only for teacher noise injection")
     parser.add_argument(
         "--student-backbone",
         type=str,
         default="BPRMF",
-        help="Student backbone (BPRMF, LINE, LGCN, NGCF, DGCF, SGL, SpectralCF, or NMF)",
+        help="Student backbone (BPRMF, LINE, LGCN, NGCF, DGCF, SGL, UltraGCN, SpectralCF, or NMF)",
     )
     parser.add_argument("--student-framework", type=str, default="recbole", choices=["recbole", "elliot", "lenskit"], help="Framework implementation used for the student backbone")
     parser.add_argument("--student-embedding-dim", type=int, default=64, help="Student embedding dimension")

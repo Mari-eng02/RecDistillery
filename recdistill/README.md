@@ -48,7 +48,7 @@ set is:
 | Framework | Models |
 | --- | --- |
 | RecBole | `BPRMF`, `LINE`, `LGCN`, `NGCF`, `DGCF`, `SGL`, `SPECTRALCF`, `NMF` |
-| Elliot | `NMF` |
+| Elliot | `BPRMF`, `NMF`, `LGCN`, `NGCF`, `DGCF`, `SGL`, `ULTRAGCN` |
 | Lenskit | `BPRMF`, `LGCN` |
 
 Use the welcome script to print the supported model table:

@@ -1,0 +1,8 @@
+# DGCF Teacher Model Configuration
+framework: elliot
+model: DGCF
+embedding_dim: 200
+learning_rate: 0.001
+l2_reg: 0.0001
+dropout: 0.1
+num_layers: 2

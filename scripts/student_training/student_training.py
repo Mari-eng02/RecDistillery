@@ -47,7 +47,7 @@ if __name__ == "__main__":
     parser.add_argument("--skip-eval", action="store_true")
 
     args = parser.parse_args()
-    backbones = [BPRMF, "LINE", LGCN, "NGCF", "DGCF", "SGL", "SPECTRALCF", NMF]
+    backbones = [BPRMF, "LINE", LGCN, "NGCF", "DGCF", "SGL", "ULTRAGCN", "SPECTRALCF", NMF]
     datasets = [CITEULIKE, BOOKCROSSING, AMAZONCD]
     distillation = str(args.distillation).strip().lower()
     is_plain = distillation in {"none", "plain", "no", "false", "0"}

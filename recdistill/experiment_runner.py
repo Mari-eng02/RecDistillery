@@ -14,7 +14,7 @@ from recdistill.evaluation import evaluate_embeddings, evaluate_student
 from recdistill.factories import build_distiller_from_args, build_student_model, normalize_backbone_name
 from recdistill.paths import resolve_student_checkpoint_from_args, resolve_teacher_checkpoint_from_args
 from recdistill.paths import DISTILLED_STUDENT_EXT
-from recdistill.teachers import TeacherSource, inject_static_noise, load_teacher
+from recdistill.teachers import TeacherSource, load_teacher
 from recdistill.model_validation import validate_loaded_teacher_for_distillation
 from recdistill.tracking import utc_now_iso
 from recdistill.training import build_lightgcn_graph, build_train_loader, prepare_distiller_trainable_modules
@@ -75,9 +75,6 @@ class RecDistillExperimentRunner:
             "teacher_topk_items_path": getattr(self.args, "teacher_topk_items_path", None),
             "teacher_topk_scores_path": getattr(self.args, "teacher_topk_scores_path", None),
             "teacher_embedding_dim": self.args.teacher_embedding_dim,
-            "teacher_noise_scale": self.args.teacher_noise_scale,
-            "teacher_noise_target": self.args.teacher_noise_target,
-            "teacher_noise_seed": self.args.teacher_noise_seed,
             "student_backbone": self.student_backbone,
             "student_framework": self.args.student_framework,
             "student_embedding_dim": self.args.student_embedding_dim,
@@ -142,23 +139,6 @@ class RecDistillExperimentRunner:
         teacher_representation = teacher_state.metadata.get("representation")
         if teacher_representation:
             print(f"Teacher embedding representation: {teacher_representation}")
-
-        if float(self.args.teacher_noise_scale) > 0.0:
-            if not teacher_state.has_embeddings:
-                raise ValueError("Teacher noise injection requires an embedding-based teacher.")
-            teacher_state, noise_info = inject_static_noise(
-                teacher_state=teacher_state,
-                noise_scale=float(self.args.teacher_noise_scale),
-                target=str(self.args.teacher_noise_target),
-                seed=self.args.teacher_noise_seed,
-            )
-            print(
-                "Teacher noise injection: "
-                f"base_std={noise_info['base_std']:.6f} "
-                f"alpha={noise_info['noise_scale']} "
-                f"noise_std={noise_info['scaled_noise_std']:.6f} "
-                f"target={noise_info['noise_target']}"
-            )
 
         self.teacher_state = teacher_state
         user_mapping, item_mapping, mapping_source = resolve_teacher_dataset_mappings(
@@ -623,7 +603,6 @@ def runner_args_from_config(config: RecDistillConfig) -> SimpleNamespace:
     topology = _dict_section(distillation, "topology")
     rrd = _dict_section(distillation, "rrd")
     unkd = _dict_section(distillation, "unkd")
-    teacher_noise = _dict_section(teacher, "noise")
     wandb = runtime.wandb if isinstance(runtime.wandb, dict) else {}
 
     return SimpleNamespace(
@@ -639,9 +618,6 @@ def runner_args_from_config(config: RecDistillConfig) -> SimpleNamespace:
         teacher_score_matrix_path=getattr(teacher, "score_matrix_path", None),
         teacher_topk_items_path=getattr(teacher, "topk_items_path", None),
         teacher_topk_scores_path=getattr(teacher, "topk_scores_path", None),
-        teacher_noise_scale=teacher_noise.get("scale", getattr(teacher, "noise_scale", 0.0) or 0.0),
-        teacher_noise_target=teacher_noise.get("target", getattr(teacher, "noise_target", "both") or "both"),
-        teacher_noise_seed=teacher_noise.get("seed", getattr(teacher, "noise_seed", None)),
         student_backbone=student.backbone,
         student_framework=getattr(student, "framework", "recbole"),
         student_embedding_dim=student.embedding_dim,

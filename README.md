@@ -13,7 +13,7 @@ The current framework supports:
 - 6 distillers: DE, RRD, DE+RRD, HTD, FTD, UnKD.
 
 Imported recommendation model definitions currently come from RecBole, Elliot, and Lenskit. 
-RecDistill trains only the subset exposed through PyTorch adapters:
+RecDistill trains only this subset exposed through PyTorch adapters:
 - RecBole:
   - BPRMF (aliases: BPR, BPRMF)
   - LINE (aliases: LINE)
@@ -24,6 +24,12 @@ RecDistill trains only the subset exposed through PyTorch adapters:
   - SPECTRALCF (aliases: SpectralCF, SPECTRALCF)
   - NMF (aliases: NMF, NeuMF)
 - Elliot:
+  - BPRMF (aliases: BPR, BPRMF)
+  - LGCN (aliases: LGCN, LightGCN)
+  - NGCF (aliases: NGCF)
+  - DGCF (aliases: DGCF)
+  - SGL (aliases: SGL)
+  - ULTRAGCN (aliases: UltraGCN, ULTRAGCN)
   - NMF (aliases: NMF, NeuMF)
 - Lenskit:
   - BPRMF (aliases: BPRMF)
@@ -53,7 +59,6 @@ The dataset preprocessing and standardized data management are based on `DataRec
 - [Configs And Presets](#configs-and-presets)
 - [Evaluation](#evaluation)
 - [Results Structure](#results-structure)
-- [Perturbation Analysis](#perturbation-analysis)
 - [Timing Analysis](#timing-analysis)
 
 ---
@@ -530,42 +535,6 @@ Use `fixed/wei` for runs with fixed parameters and `best/wei` for reruns with be
 
 ---
 
-# Perturbation Analysis
-
-Perturbation analysis evaluates robustness to teacher inaccuracies.
-
-Gaussian noise is injected into:
-- user embeddings,
-- item embeddings,
-- both.
-
-## Main Script
-
-```bash
-python3 scripts/recdistill/train_student.py \
-  --dataset <dataset> \
-  --teacher-framework <teacher_framework> \
-  --teacher-model <teacher_model> \
-  --teacher-embedding-dim <teacher_dim> \
-  --student-framework <student_framework> \
-  --student-backbone <student_backbone> \
-  --student-embedding-dim <student_dim> \
-  --teacher-noise-scale <scale> \
-  --teacher-noise-target <both|user|item> \
-  --teacher-noise-seed <seed>
-```
-
-## Config-Based Execution
-
-```bash
-python3 scripts/recdistill/train_student_from_config.py \
-  --config config/experiments/recdistill_template_<distiller>.yaml
-```
-
-In these templates, you can set train_student.teacher.noise.scale to a value > 0 to inject noise.
-
----
-
 # Timing Analysis
 
 Timing analysis is implemented through tracked student runs. The same run that collects the final metrics also records the values needed to measure:
@@ -588,4 +557,3 @@ python3 scripts/recdistill/train_student_from_config.py \
 results/recdistill/<distiller>/<teacher_framework>/<teacher_model>/<student_framework>/<student_model>/<dataset>/tracked/<run_id>/
 ```
 
----

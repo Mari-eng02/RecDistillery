@@ -16,6 +16,7 @@ TOPOLOGY_DISTILLERS = frozenset({"HTD", "FTD"})
 # representation size is embedding_dim * (num_layers + 1).
 DE_FIXED_DIM_UNSAFE_STUDENTS = frozenset(
     {
+        ("elliot", "ngcf"),
         ("recbole", "ngcf"),
         ("recbole", "spectralcf"),
     }
@@ -268,7 +269,7 @@ def _validate_student_backbone_distiller(
             f"Incompatible student backbone/distiller: {student_framework} {student_backbone} cannot currently be used with DE. "
             "This adapter returns layer-concatenated embeddings whose effective dimension differs from student.embedding_dim, "
             "while DE builds fixed-size projection experts from student.embedding_dim. "
-            "Use RRD, UnKD, HTD, or FTD for this backbone, or choose BPRMF, LINE, LGCN, DGCF, SGL, or NMF for DE."
+            "Use RRD, UnKD, HTD, or FTD for this backbone, or choose BPRMF, LINE, LGCN, DGCF, SGL, UltraGCN, or NMF for DE."
         )
 
 

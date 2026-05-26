@@ -1,0 +1,49 @@
+preset:
+  schema_version: 1
+  kind: elliot
+  family: best
+  name: elliot_neumf_citeulike_200_best
+  generated: false
+config:
+  experiment:
+    backend: pytorch
+    data_config:
+      name: citeulike
+      strategy: fixed
+      train_path: ../../../../../data/citeulike/train.tsv
+      validation_path: ../../../../../data/citeulike/val.tsv
+      test_path: ../../../../../data/citeulike/test.tsv
+      dataloader: DataSetLoader
+    path_output_rec_result: results/teachers/elliot/NMF/citeulike/best/recs/
+    path_output_rec_weight: results/teachers/elliot/NMF/citeulike/best/wei/
+    path_output_rec_performance: results/teachers/elliot/NMF/citeulike/best/perf/
+    dataset: citeulike
+    top_k: 50
+    evaluation:
+      cutoffs:
+        - 10
+        - 20
+        - 50
+      simple_metrics:
+        - nDCGRendle2020
+        - Recall
+        - Precision
+        - HR
+    gpu: 0
+    models:
+      NeuMFTorch:
+        meta:
+          dataset_name: citeulike
+          verbose: true
+          save_weights: false
+          save_recs: false
+          save_model: true
+          validation_rate: 13
+          validation_metric: nDCGRendle2020@20
+          restore: false
+        epochs: 13
+        batch_size: 2048
+        factors: 200
+        lr: 0.001
+        dropout: 0.1
+        seed: 123

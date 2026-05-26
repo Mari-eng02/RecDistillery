@@ -181,7 +181,6 @@ class TeacherConfig(BaseModel):
     score_matrix_path: Optional[str] = Field(default=None)
     topk_items_path: Optional[str] = Field(default=None)
     topk_scores_path: Optional[str] = Field(default=None)
-    noise: Dict[str, Any] = Field(default_factory=lambda: {"scale": 0.0, "target": "both", "seed": None})
 
     @field_validator("model")
     @classmethod

@@ -7,10 +7,6 @@ train_student:
     model: null  # Will be filled by composer
     embedding_dim: 200
     path: null
-    noise:
-      scale: 0.0
-      target: both
-      seed: null
   
   student:
     framework: null

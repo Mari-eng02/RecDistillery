@@ -376,9 +376,15 @@ class ConfigLoader:
     @staticmethod
     def _elliot_model_key(backbone: str) -> str:
         mapping = {
-            "BPRMF": "external.BPRMF",
-            "LGCN": "external.LightGCN",
-            "LIGHTGCN": "external.LightGCN",
+            "BPRMF": "torch.BPRMF",
+            "BPR": "torch.BPRMF",
+            "LGCN": "torch.LightGCN",
+            "LIGHTGCN": "torch.LightGCN",
+            "NGCF": "torch.NGCF",
+            "DGCF": "torch.DGCF",
+            "SGL": "torch.SGL",
+            "ULTRAGCN": "torch.UltraGCN",
+            "ULTRA_GCN": "torch.UltraGCN",
             "NMF": "NeuMFTorch",
             "NFM": "NeuMFTorch",
             "NEUMF": "NeuMFTorch",
@@ -393,6 +399,8 @@ class ConfigLoader:
         normalized = backbone.upper()
         if normalized in {"LIGHTGCN"}:
             return "LGCN"
+        if normalized in {"ULTRA_GCN"}:
+            return "ULTRAGCN"
         if normalized in {"NFM", "NEUMF"}:
             return "NMF"
         return normalized

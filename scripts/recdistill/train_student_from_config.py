@@ -444,19 +444,14 @@ def build_command(config: dict) -> list[str]:
         _add_arg(cmd, "--teacher-topk-items-path", teacher_conf.get("topk_items_path"))
         _add_arg(cmd, "--teacher-topk-scores-path", teacher_conf.get("topk_scores_path"))
 
-    noise_conf = teacher_conf.get("noise", {}) if isinstance(teacher_conf.get("noise", {}), dict) else {}
-    _add_arg(cmd, "--teacher-noise-scale", noise_conf.get("scale", teacher_conf.get("noise_scale")))
-    _add_arg(cmd, "--teacher-noise-target", noise_conf.get("target", teacher_conf.get("noise_target")))
-    _add_arg(cmd, "--teacher-noise-seed", noise_conf.get("seed", teacher_conf.get("noise_seed")))
-
     student_backbone = student_conf.get("backbone")
     if not student_backbone:
         raise ValueError("Missing required field: train_student.student.backbone")
-    supported_student_backbones = {"BPRMF", "BPR", "LINE", "LGCN", "LIGHTGCN", "NGCF", "DGCF", "SGL", "SPECTRALCF", "SPECTRAL_CF", "NMF", "NFM", "NEUMF"}
+    supported_student_backbones = {"BPRMF", "BPR", "LINE", "LGCN", "LIGHTGCN", "NGCF", "DGCF", "SGL", "ULTRAGCN", "ULTRA_GCN", "SPECTRALCF", "SPECTRAL_CF", "NMF", "NFM", "NEUMF"}
     if str(student_backbone).upper() not in supported_student_backbones:
         raise ValueError(
             f"Unsupported train_student.student.backbone: {student_backbone}. "
-            "Currently supported: BPRMF, LINE, LGCN, NGCF, DGCF, SGL, SpectralCF, NMF."
+            "Currently supported: BPRMF, LINE, LGCN, NGCF, DGCF, SGL, UltraGCN, SpectralCF, NMF."
         )
     _add_arg(cmd, "--student-backbone", student_backbone)
     _add_arg(cmd, "--student-framework", student_conf.get("framework"))

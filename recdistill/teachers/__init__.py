@@ -6,7 +6,6 @@ __all__ = [
     "load_teacher",
     "load_teacher_state",
     "save_teacher_state",
-    "inject_static_noise",
 ]
 
 
@@ -39,8 +38,4 @@ def __getattr__(name: str):
         from recdistill.teachers.serialization import save_teacher_state
 
         return save_teacher_state
-    if name == "inject_static_noise":
-        from recdistill.teachers.noise import inject_static_noise
-
-        return inject_static_noise
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

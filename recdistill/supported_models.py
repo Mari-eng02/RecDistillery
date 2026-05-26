@@ -30,28 +30,28 @@ class TorchCompatibleModel:
 
 REPORTED_TOTAL_MODELS: dict[str, int] = {
     "recbole": 91,
-    "elliot": 59,
+    "elliot": 64,
     "lenskit": 23,
 }
 
 
 REPORTED_TORCH_COMPATIBLE_COUNTS: dict[str, int] = {
     "recbole": 91,
-    "elliot": 1,
+    "elliot": 7,
     "lenskit": 5,
 }
 
 
 REPORTED_TORCH_COMPATIBLE_PERCENTAGES: dict[str, str] = {
     "recbole": "100%",
-    "elliot": "1.7%",
+    "elliot": "10.8%",
     "lenskit": "21.7%",
-    "total": "56.1%",
+    "total": "57.9%",
 }
 
 
-REPORTED_TOTAL_IMPORTED_MODELS = 173
-REPORTED_TOTAL_TORCH_COMPATIBLE_MODELS = 97
+REPORTED_TOTAL_IMPORTED_MODELS = 178
+REPORTED_TOTAL_TORCH_COMPATIBLE_MODELS = 103
 
 
 RECBOLE_TORCH_COMPATIBLE_MODELS: tuple[str, ...] = (
@@ -150,7 +150,13 @@ RECBOLE_TORCH_COMPATIBLE_MODELS: tuple[str, ...] = (
 
 
 ELLIOT_TORCH_COMPATIBLE_MODELS: tuple[str, ...] = (
+    "BPRMF",
+    "DGCF",
+    "LightGCN",
+    "NGCF",
     "NeuMFTorch",
+    "SGL",
+    "UltraGCN",
 )
 
 
@@ -236,10 +242,52 @@ TRAINABLE_BACKBONES: tuple[TrainableBackbone, ...] = (
     ),
     TrainableBackbone(
         framework="elliot",
+        model="BPRMF",
+        aliases=("BPR", "BPRMF"),
+        adapter="ElliotBackboneAdapter",
+        implementation="recommenders.elliot.torch.bprmf.BPRMFModel",
+    ),
+    TrainableBackbone(
+        framework="elliot",
         model="NMF",
         aliases=("NMF", "NeuMF"),
         adapter="ElliotBackboneAdapter",
         implementation="recommenders.elliot.neural.NeuMF.neural_matrix_factorization_torch_model.NeuralMatrixFactorizationTorchModel",
+    ),
+    TrainableBackbone(
+        framework="elliot",
+        model="LGCN",
+        aliases=("LGCN", "LightGCN"),
+        adapter="ElliotBackboneAdapter",
+        implementation="recommenders.elliot.torch.lightgcn.LightGCNModel",
+    ),
+    TrainableBackbone(
+        framework="elliot",
+        model="NGCF",
+        aliases=("NGCF",),
+        adapter="ElliotBackboneAdapter",
+        implementation="recommenders.elliot.torch.ngcf.NGCFModel",
+    ),
+    TrainableBackbone(
+        framework="elliot",
+        model="DGCF",
+        aliases=("DGCF",),
+        adapter="ElliotBackboneAdapter",
+        implementation="recommenders.elliot.torch.dgcf.DGCFModel",
+    ),
+    TrainableBackbone(
+        framework="elliot",
+        model="SGL",
+        aliases=("SGL",),
+        adapter="ElliotBackboneAdapter",
+        implementation="recommenders.elliot.torch.sgl.SGLModel",
+    ),
+    TrainableBackbone(
+        framework="elliot",
+        model="ULTRAGCN",
+        aliases=("UltraGCN", "ULTRAGCN"),
+        adapter="ElliotBackboneAdapter",
+        implementation="recommenders.elliot.torch.ultragcn.UltraGCNModel",
     ),
     TrainableBackbone(
         framework="lenskit",
@@ -260,18 +308,6 @@ TRAINABLE_BACKBONES: tuple[TrainableBackbone, ...] = (
 
 
 UNSUPPORTED_KNOWN_BACKBONES: tuple[UnsupportedBackbone, ...] = (
-    UnsupportedBackbone(
-        framework="elliot",
-        model="BPRMF",
-        reason="The imported Elliot implementation is NumPy/manual-update, not a torch.nn.Module.",
-        recommended_path="Train it outside RecDistill and import it with import_teacher.py as a .teacher.",
-    ),
-    UnsupportedBackbone(
-        framework="elliot",
-        model="LGCN",
-        reason="The imported Elliot implementation is TensorFlow/Keras, not trainable by the PyTorch loop.",
-        recommended_path="Train it outside RecDistill and import it with import_teacher.py as a .teacher.",
-    ),
     UnsupportedBackbone(
         framework="lenskit",
         model="NMF",

@@ -12,10 +12,6 @@ config:
       model: ITEMKNNSCORER
       embedding_dim: 21
       path: results\teachers\lenskit\ItemKNNScorer\citeulike\imported\lenskit_ItemKNNScorer_citeulike_200.teacher
-      noise:
-        scale: 0.0
-        target: both
-        seed: null
       format: checkpoint
     student:
       framework: recbole

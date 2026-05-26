@@ -19,10 +19,6 @@ config:
       score_matrix_path: null
       topk_items_path: null
       topk_scores_path: null
-      noise:
-        scale: 0.0
-        target: both
-        seed: null
     student:
       framework: recbole
       backbone: LGCN
