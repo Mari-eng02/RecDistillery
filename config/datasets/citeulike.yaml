@@ -1,9 +1,0 @@
-# CiteULike Dataset Configuration
-name: citeulike
-strategy: fixed
-train_path: data/citeulike/train.tsv
-validation_path: data/citeulike/val.tsv
-test_path: data/citeulike/test.tsv
-dataloader: DataSetLoader
-column_names: ['userId', 'itemId', 'rating', 'timestamp']
-kcore: [10, 10]

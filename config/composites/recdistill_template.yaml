@@ -1,0 +1,27 @@
+# Generic RecDistill Student Training Template
+distill_student:
+  dataset: null
+
+  teacher:
+    default: null
+
+  student:
+    default: null
+
+  optimization:
+    default: optimization/default.yaml
+    batch_size: 4096
+
+  distillation:
+    strategy: null
+    default: null
+
+  runtime:
+    default: runtime/default.yaml
+    num_workers: 4
+
+  evaluation:
+    default: evaluation/default.yaml
+    batch_size: 1024
+
+  

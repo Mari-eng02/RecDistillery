@@ -76,29 +76,29 @@ if __name__ == "__main__":
             model_name=args.model,
             framework=args.framework,
         )
-        preset_path = loader.save_generated_preset(
+        train_config = composed_config["train_teacher"]
+        experiment_path = loader.save_generated_experiment(
             kind="teacher",
-            family="generated",
             name=(
-                f"{composed_config['teacher']['framework']}_"
-                f"{composed_config['teacher']['model']}_"
-                f"{composed_config['dataset']}_"
-                f"{composed_config['teacher']['embedding_dim']}"
+                f"{train_config['teacher']['framework']}_"
+                f"{train_config['teacher']['model']}_"
+                f"{train_config['dataset']}_"
+                f"{train_config['teacher']['embedding_dim']}"
             ),
             path_parts=[
-                composed_config["teacher"]["framework"],
-                composed_config["teacher"]["model"],
-                composed_config["dataset"],
+                train_config["teacher"]["framework"],
+                train_config["teacher"]["model"],
+                train_config["dataset"],
             ],
             config=composed_config,
         )
         train_args = native_args_from_config_file(
-            preset_path,
+            experiment_path,
             role="teacher",
             fallback_dataset=args.dataset,
             fallback_backbone=args.model,
             overrides=overrides,
         )
-        print(f"Generated teacher config saved to: {preset_path}")
+        print(f"Generated teacher config saved to: {experiment_path}")
 
     NativeModelTrainingRunner(train_args).run()

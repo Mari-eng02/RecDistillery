@@ -1,0 +1,15 @@
+enabled: true
+cutoffs: [10, 20, 50]
+k: 20
+every: 5
+batch_size: 1024
+simple_metrics:
+  - nDCGRendle2020
+  - Recall
+  - Precision
+  - HR
+val_only: true
+selection_split: val
+selection_metric: ndcg
+assert_no_train_leak: true
+relevance_threshold: 0

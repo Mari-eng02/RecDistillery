@@ -72,11 +72,11 @@ python scripts\teacher_training\teacher_training.py `
   --dataset citeulike
 ```
 
-or use a preset:
+or use a complete experiment config:
 
 ```powershell
 python scripts\teacher_training\teacher_training.py `
-  --config config\presets\teacher\<framework>\<model>\<dataset>\<preset>.yaml
+  --config config\experiments\teacher\<experiment>.yaml
 ```
 
 Teacher checkpoints are saved as `.teacher`.
@@ -101,7 +101,7 @@ Train a distilled student from config:
 
 ```powershell
 python scripts\recdistill\train_student_from_config.py `
-  --config config\presets\recdistill\<distiller>\<teacher_framework>\<teacher_model>\<student_framework>\<student_model>\<dataset>\<preset>.yaml
+  --config config\experiments\recdistill\<experiment>.yaml
 ```
 
 or compose the config on the fly:
@@ -119,13 +119,14 @@ python scripts\recdistill\train_student_from_config.py `
 Distilled student checkpoints are saved as `.distilled_student`.
 
 When `--config` is omitted, the scripts compose a config from
-`config/datasets/`, `config/models/`, `config/distillers/`, and
-`config/experiments/`, then save the generated file under:
+`config/dataset/`, `config/teacher/`, `config/student/`,
+`config/distillation/`, and `config/composites/`, then save the generated file
+under:
 
 ```text
-config/presets/teacher/generated/...
-config/presets/student/generated/...
-config/presets/recdistill/generated/...
+config/experiments/teacher/...
+config/experiments/student/...
+config/experiments/recdistill/...
 ```
 
 ## Teacher Import Contract

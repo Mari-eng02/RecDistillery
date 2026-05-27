@@ -1,6 +1,0 @@
-# Logit-based Factorization Distiller (FTD) Configuration
-strategy: FTD
-temperature: 3.0
-lambda_kl: 0.5
-temperature_scheduler: linear
-decay_rate: 0.95

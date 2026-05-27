@@ -13,7 +13,6 @@ from recdistill.paths import distilled_student_artifact_path
 
 from config.schemas import (
     ConfigPreset,
-    ElliotConfig,
     RecDistillConfig,
     DataConfig,
     ModelConfig,
@@ -54,27 +53,44 @@ class ConfigLoader:
         self._cache[str(filepath)] = data
         return data
 
-    def load_elliot_config(self, config_path: Union[str, Path]) -> ElliotConfig:
+    def _resolve_config_path(self, path: Union[str, Path]) -> Path:
+        config_path = Path(path)
+        return config_path if config_path.is_absolute() else self.root / config_path
+
+    def load_module_config(self, module_path: Union[str, Path], overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Load a module config and apply optional overrides."""
+        data = copy.deepcopy(self._load_yaml(self._resolve_config_path(module_path)) or {})
+        if overrides:
+            data = _deep_merge(data, overrides)
+        return data
+
+    def resolve_config_modules(self, config: Any) -> Any:
+        """Resolve `default: path/to/module.yaml` sections recursively.
+
+        Paths may be absolute or relative to the config root. Sibling keys in
+        the same mapping override the loaded defaults.
         """
-        Load and validate Elliot configuration.
-        
-        Args:
-            config_path: Path to Elliot config YAML file
-            
-        Returns:
-            Validated ElliotConfig object
-            
-        Raises:
-            FileNotFoundError: If config file doesn't exist
-            ValidationError: If config doesn't match schema
-        """
-        data = self._load_yaml(config_path)
-        if isinstance(data, dict) and "preset" in data and "config" in data:
-            data = data["config"]
-        try:
-            return ElliotConfig(**data)
-        except ValidationError as e:
-            raise ValueError(f"Invalid Elliot config in {config_path}:\n{e}")
+        if isinstance(config, list):
+            return [self.resolve_config_modules(item) for item in config]
+        if not isinstance(config, dict):
+            return config
+
+        if "default" in config:
+            default_path = config.get("default")
+            if default_path is None:
+                base: Dict[str, Any] = {}
+            elif isinstance(default_path, (str, Path)):
+                base = self.resolve_config_modules(self.load_module_config(default_path))
+            else:
+                raise TypeError("Config module `default` must be a path string.")
+            overrides = {
+                key: self.resolve_config_modules(value)
+                for key, value in config.items()
+                if key != "default"
+            }
+            return _deep_merge(base, overrides)
+
+        return {key: self.resolve_config_modules(value) for key, value in config.items()}
 
     def load_recdistill_config(self, config_path: Union[str, Path]) -> RecDistillConfig:
         """
@@ -93,6 +109,7 @@ class ConfigLoader:
         data = self._load_yaml(config_path)
         if isinstance(data, dict) and "preset" in data and "config" in data:
             data = data["config"]
+        data = self.resolve_config_modules(data)
         from recdistill.config_integration import normalize_recdistill_config
 
         data = normalize_recdistill_config(data)
@@ -106,7 +123,7 @@ class ConfigLoader:
         Load a wrapped experiment preset.
 
         Presets preserve provenance metadata under `preset` and keep the actual
-        Elliot or RecDistill payload under `config`.
+        training payload under `config`.
         """
         data = self._load_yaml(preset_path)
         try:
@@ -126,16 +143,6 @@ class ConfigLoader:
         except ValidationError as e:
             raise ValueError(f"Invalid RecDistill config inside preset {preset_path}:\n{e}")
 
-    def load_elliot_preset(self, preset_path: Union[str, Path]) -> ElliotConfig:
-        """Load an Elliot preset and validate its inner config."""
-        preset = self.load_preset(preset_path)
-        if preset.preset.kind.lower() != "elliot":
-            raise ValueError(f"Preset is not an Elliot preset: {preset_path}")
-        try:
-            return ElliotConfig(**preset.config)
-        except ValidationError as e:
-            raise ValueError(f"Invalid Elliot config inside preset {preset_path}:\n{e}")
-
     def load_dataset_config(self, dataset_name: str) -> DataConfig:
         """
         Load dataset configuration.
@@ -146,7 +153,7 @@ class ConfigLoader:
         Returns:
             Validated DataConfig object
         """
-        config_path = self.root / "datasets" / f"{dataset_name}.yaml"
+        config_path = self.root / "dataset" / f"{dataset_name}.yaml"
         data = self._load_yaml(config_path)
         try:
             return DataConfig(**data)
@@ -167,15 +174,15 @@ class ConfigLoader:
         model_slug = str(model_name).strip().lower()
         framework_slug = str(framework).strip().lower() if framework else None
         if framework_slug:
-            config_path = self.root / "models" / model_type / framework_slug / f"{model_slug}.yaml"
+            config_path = self.root / model_type / framework_slug / f"{model_slug}.yaml"
         else:
-            config_path = self.root / "models" / model_type / f"{model_slug}.yaml"
+            config_path = self.root / model_type / f"{model_slug}.yaml"
             if not config_path.exists():
-                default_path = self.root / "models" / model_type / "recbole" / f"{model_slug}.yaml"
+                default_path = self.root / model_type / "recbole" / f"{model_slug}.yaml"
                 if default_path.exists():
                     config_path = default_path
                 else:
-                    matches = sorted((self.root / "models" / model_type).glob(f"*/{model_slug}.yaml"))
+                    matches = sorted((self.root / model_type).glob(f"*/{model_slug}.yaml"))
                     if len(matches) == 1:
                         config_path = matches[0]
                     elif len(matches) > 1:
@@ -212,20 +219,12 @@ class ConfigLoader:
         self.load_dataset_config(dataset_name)
         model = self.load_model_config(model_type, model_name, framework=framework)
         
-        config_path = self.root / "experiments" / "teacher_template.yaml"
+        config_path = self.root / "composites" / "teacher_template.yaml"
         template = copy.deepcopy(self._load_yaml(config_path))
+        train = template.setdefault("train_teacher", {})
 
-        template["dataset"] = dataset_name
-        template["teacher"]["framework"] = model.framework
-        template["teacher"]["model"] = model.model
-        template["teacher"]["embedding_dim"] = model.embedding_dim
-        template["teacher"]["learning_rate"] = model.learning_rate
-        template["teacher"]["l2_reg"] = model.l2_reg
-        template["teacher"]["dropout"] = model.dropout
-        self._copy_model_specific_fields(model, template["teacher"])
-        self._remove_none_values(template["teacher"])
-        template["optimization"]["learning_rate"] = model.learning_rate
-        template["optimization"]["l2_reg"] = model.l2_reg
+        train["dataset"] = dataset_name
+        train["teacher"] = {"default": _module_path("teacher", model.framework, model.model)}
         return template
 
     def compose_student_training(
@@ -241,21 +240,29 @@ class ConfigLoader:
         self.load_dataset_config(dataset_name)
         model = self.load_model_config(model_type, model_name, framework=framework)
 
-        config_path = self.root / "experiments" / "student_template.yaml"
+        config_path = self.root / "composites" / "student_template.yaml"
         template = copy.deepcopy(self._load_yaml(config_path))
+        train = template.setdefault("train_student", {})
 
-        template["dataset"] = dataset_name
-        template["student"]["framework"] = model.framework
-        template["student"]["backbone"] = model.backbone
-        template["student"]["embedding_dim"] = model.embedding_dim
-        template["student"]["learning_rate"] = model.learning_rate
-        template["student"]["l2_reg"] = model.l2_reg
-        template["student"]["dropout"] = model.dropout
-        self._copy_model_specific_fields(model, template["student"])
-        self._remove_none_values(template["student"])
-        template["optimization"]["learning_rate"] = model.learning_rate
-        template["optimization"]["l2_reg"] = model.l2_reg
+        train["dataset"] = dataset_name
+        train["student"] = {"default": _module_path("student", model.framework, model.backbone)}
         return template
+
+    def save_generated_experiment(
+        self,
+        *,
+        kind: str,
+        name: str,
+        config: Dict[str, Any],
+        path_parts: list[str],
+    ) -> Path:
+        """Persist an on-the-fly composed config as an experiment file."""
+        safe_parts = [_slug(part) for part in path_parts if str(part).strip()]
+        experiment_path = self.root / "experiments" / kind / Path(*safe_parts) / f"{_slug(name)}.yaml"
+        experiment_path.parent.mkdir(parents=True, exist_ok=True)
+        with experiment_path.open("w", encoding="utf-8") as fp:
+            yaml.safe_dump(config, fp, sort_keys=False, allow_unicode=False)
+        return experiment_path
 
     def save_generated_preset(
         self,
@@ -266,23 +273,14 @@ class ConfigLoader:
         config: Dict[str, Any],
         path_parts: list[str],
     ) -> Path:
-        """Persist an on-the-fly composed config as a reusable preset."""
-        safe_parts = [_slug(part) for part in path_parts if str(part).strip()]
-        preset_path = self.root / "presets" / kind / family / Path(*safe_parts) / f"{_slug(name)}.yaml"
-        preset_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "preset": {
-                "schema_version": 1,
-                "kind": kind,
-                "family": family,
-                "name": name,
-                "generated": True,
-            },
-            "config": config,
-        }
-        with preset_path.open("w", encoding="utf-8") as fp:
-            yaml.safe_dump(payload, fp, sort_keys=False, allow_unicode=False)
-        return preset_path
+        """Backward-compatible alias for saving generated experiment configs."""
+        del family
+        return self.save_generated_experiment(
+            kind=kind,
+            name=name,
+            config=config,
+            path_parts=path_parts,
+        )
 
     def compose_recdistill_experiment(
         self,
@@ -323,26 +321,20 @@ class ConfigLoader:
             distiller=distiller_strategy,
         )
         
-        config_path = self.root / "experiments" / f"recdistill_template_{distiller_strategy}.yaml"
+        config_path = self.root / "composites" / "recdistill_template.yaml"
         template = copy.deepcopy(self._load_yaml(config_path))
-        distiller_cfg = self._load_yaml(self.root / "distillers" / f"{distiller_strategy}.yaml")
         
         # Merge configs
-        template["train_student"]["dataset"] = dataset_name
-        template["train_student"]["teacher"]["framework"] = teacher_cfg.framework
-        template["train_student"]["teacher"]["model"] = teacher_cfg.model
-        template["train_student"]["teacher"]["embedding_dim"] = teacher_cfg.embedding_dim
-        template["train_student"]["student"]["framework"] = student_cfg.framework
-        template["train_student"]["student"]["backbone"] = student_cfg.backbone
-        template["train_student"]["student"]["embedding_dim"] = student_cfg.embedding_dim
-        self._copy_model_specific_fields(student_cfg, template["train_student"]["student"])
-        template["train_student"]["distillation"].update(distiller_cfg)
-        template["train_student"]["distillation"]["strategy"] = str(
-            template["train_student"]["distillation"].get("strategy", distiller_strategy)
-        ).upper()
-        template["train_student"]["student"]["model"] = template["train_student"]["distillation"]["strategy"]
+        train = template["distill_student"]
+        train["dataset"] = dataset_name
+        train["teacher"] = {"default": _module_path("teacher", teacher_cfg.framework, teacher_cfg.model)}
+        train["student"] = {"default": _module_path("student", student_cfg.framework, student_cfg.backbone)}
+        train["distillation"] = {
+            "default": f"distillation/{_slug(distiller_strategy)}.yaml",
+            "strategy": str(distiller_strategy).replace("-", "_").upper(),
+        }
 
-        runtime = template["train_student"].setdefault("runtime", {})
+        runtime = train.setdefault("runtime", {})
         runtime["output_path"] = str(
             distilled_student_artifact_path(
                 distiller=distiller_strategy,
@@ -356,9 +348,7 @@ class ConfigLoader:
             ).relative_to(Path(__file__).resolve().parents[1])
         ).replace("\\", "/")
         
-        from recdistill.config_integration import normalize_recdistill_config
-
-        return RecDistillConfig(**normalize_recdistill_config(template)).model_dump()
+        return template
 
     @staticmethod
     def _copy_model_specific_fields(model: ModelConfig, target: Dict[str, Any]) -> None:
@@ -411,14 +401,13 @@ class ConfigLoader:
 
     def list_datasets(self) -> list[str]:
         """List available datasets."""
-        datasets_dir = self.root / "datasets"
+        datasets_dir = self.root / "dataset"
         return [f.stem for f in datasets_dir.glob("*.yaml")]
 
     def list_models(self, model_type: str = None) -> Dict[str, list[str]]:
         """List available models by type."""
-        models_dir = self.root / "models"
         if model_type:
-            type_dir = models_dir / model_type
+            type_dir = self.root / model_type
             return {
                 model_type: [
                     path.relative_to(type_dir).with_suffix("").as_posix()
@@ -427,9 +416,10 @@ class ConfigLoader:
             }
         else:
             result = {}
-            for type_dir in models_dir.iterdir():
-                if type_dir.is_dir():
-                    result[type_dir.name] = [
+            for model_type_name in ("teacher", "student"):
+                type_dir = self.root / model_type_name
+                if type_dir.exists():
+                    result[model_type_name] = [
                         path.relative_to(type_dir).with_suffix("").as_posix()
                         for path in sorted(type_dir.rglob("*.yaml"))
                     ]
@@ -437,23 +427,27 @@ class ConfigLoader:
 
     def list_distillers(self) -> list[str]:
         """List available distiller strategies."""
-        distillers_dir = self.root / "distillers"
+        distillers_dir = self.root / "distillation"
         return [f.stem for f in distillers_dir.glob("*.yaml")]
 
     def list_presets(self, kind: Optional[str] = None) -> list[str]:
-        """List preset files relative to config/presets."""
-        presets_dir = self.root / "presets"
-        if not presets_dir.exists():
+        """List experiment files relative to config/experiments."""
+        return self.list_experiments(kind)
+
+    def list_experiments(self, kind: Optional[str] = None) -> list[str]:
+        """List experiment files relative to config/experiments."""
+        experiments_dir = self.root / "experiments"
+        if not experiments_dir.exists():
             return []
-        files = sorted(path for path in presets_dir.rglob("*.yaml") if path.is_file())
+        files = sorted(path for path in experiments_dir.rglob("*.yaml") if path.is_file())
         if kind is not None:
             prefix = kind.lower()
             files = [
                 path
                 for path in files
-                if path.relative_to(presets_dir).parts[0].lower() == prefix
+                if path.relative_to(experiments_dir).parts[0].lower() == prefix
             ]
-        return [path.relative_to(presets_dir).as_posix() for path in files]
+        return [path.relative_to(experiments_dir).as_posix() for path in files]
 
 
 # Global config loader instance
@@ -474,5 +468,23 @@ def reset_config_loader():
     _global_loader = None
 
 
+def _deep_merge(base: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
+    merged = copy.deepcopy(base)
+    for key, value in overrides.items():
+        if (
+            key in merged
+            and isinstance(merged[key], dict)
+            and isinstance(value, dict)
+        ):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = copy.deepcopy(value)
+    return merged
+
+
 def _slug(value: Any) -> str:
     return str(value).strip().lower().replace(" ", "_").replace("-", "_").replace("+", "_")
+
+
+def _module_path(kind: str, framework: str, model: str) -> str:
+    return f"{kind}/{_slug(framework)}/{_slug(model)}.yaml"

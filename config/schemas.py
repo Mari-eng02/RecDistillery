@@ -15,11 +15,9 @@ class DataConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
     
     name: str = Field(..., description="Dataset name (amazon_cd, bookcrossing, citeulike)")
-    strategy: str = Field(default="fixed", description="Data loading strategy")
     train_path: str = Field(..., description="Path to training data")
     test_path: str = Field(..., description="Path to test data")
     validation_path: Optional[str] = Field(default=None, description="Path to validation data")
-    dataloader: str = Field(default="DataSetLoader", description="Dataloader class name")
     side_information: Optional[Dict[str, Any]] = Field(default=None)
 
     @field_validator("train_path", "test_path", "validation_path")
@@ -77,8 +75,7 @@ class OptimizationConfig(BaseModel):
     l2_reg: float = Field(default=0.0001)
     validation_rate: int = Field(default=10)
     validation_metric: str = Field(default="nDCGRendle2020@20")
-    grid_search: Dict[str, Any] = Field(default_factory=lambda: {"enabled": False})
-    optuna: Dict[str, Any] = Field(default_factory=lambda: {"enabled": False})
+    bayesian: Dict[str, Any] = Field(default_factory=lambda: {"enabled": False})
 
 
 class EvaluationConfig(BaseModel):
@@ -175,12 +172,6 @@ class TeacherConfig(BaseModel):
     path: Optional[str] = Field(default=None)
     framework: str = Field(default="auto")
     format: str = Field(default="auto")
-    adapter: Optional[str] = Field(default=None)
-    user_embeddings_path: Optional[str] = Field(default=None)
-    item_embeddings_path: Optional[str] = Field(default=None)
-    score_matrix_path: Optional[str] = Field(default=None)
-    topk_items_path: Optional[str] = Field(default=None)
-    topk_scores_path: Optional[str] = Field(default=None)
 
     @field_validator("model")
     @classmethod
@@ -197,7 +188,6 @@ class StudentConfig(BaseModel):
     
     framework: str = Field(default="recbole")
     backbone: str = Field(...)
-    model: str = Field(...)  # DE, HTD, FTD, UnKD, etc.
     embedding_dim: int = Field(...)
     lambda_de: float = Field(default=0.1)
     num_experts: int = Field(default=20)
@@ -208,69 +198,13 @@ class StudentConfig(BaseModel):
     def normalize_backbone(cls, value: str) -> str:
         return canonical_model_name(value)
 
-    @field_validator("model")
-    @classmethod
-    def normalize_model(cls, value: str) -> str:
-        methods = parse_distiller_methods(value)
-        if not methods:
-            raise ValueError("student.model must contain at least one distiller.")
-        if "HTD" in methods and "FTD" in methods:
-            raise ValueError("HTD and FTD cannot be active at the same time.")
-        return "_".join(methods)
-
-
-# ============================================================================
-# ELLIOT CONFIGS
-# ============================================================================
-
-
-class ElliotModelConfig(BaseModel):
-    """Elliot model configuration."""
-    model_config = ConfigDict(extra="allow")
-    
-    meta: Optional[Dict[str, Any]] = Field(default=None)
-    epochs: int = Field(...)
-    batch_size: int = Field(...)
-    factors: int = Field(...)
-    lr: float = Field(...)
-    dropout: float = Field(default=0.01)
-    seed: int = Field(default=123)
-    save_weights: bool = Field(default=False)
-    save_recs: bool = Field(default=False)
-    save_model: bool = Field(default=True)
-    validation_rate: int = Field(default=10)
-    validation_metric: str = Field(default="nDCGRendle2020@20")
-    restore: bool = Field(default=False)
-
-
-class ElliotExperimentConfig(BaseModel):
-    """Elliot experiment configuration."""
-    model_config = ConfigDict(extra="allow")
-    
-    backend: str = Field(default="pytorch")
-    data_config: DataConfig = Field(...)
-    dataset: str = Field(...)
-    gpu: int = Field(default=0)
-    top_k: int = Field(default=50)
-    evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
-    external_models_path: Optional[str] = Field(default=None)
-    path_output_rec_result: str = Field(...)
-    path_output_rec_weight: str = Field(...)
-    path_output_rec_performance: str = Field(...)
-    models: Dict[str, ElliotModelConfig] = Field(...)
-
-
-class ElliotConfig(BaseModel):
-    """Root Elliot configuration."""
-    experiment: ElliotExperimentConfig = Field(...)
-
 
 # ============================================================================
 # RECDISTILL CONFIGS
 # ============================================================================
 
 
-class RecDistillTrainingConfig(BaseModel):
+class DistillStudentTrainingConfig(BaseModel):
     """RecDistill student training configuration."""
     model_config = ConfigDict(extra="allow")
     
@@ -284,18 +218,13 @@ class RecDistillTrainingConfig(BaseModel):
     early_stopping: Optional[EarlyStoppingConfig] = Field(default_factory=EarlyStoppingConfig)
 
     @model_validator(mode="after")
-    def validate_cross_config_contracts(self) -> "RecDistillTrainingConfig":
+    def validate_cross_config_contracts(self) -> "DistillStudentTrainingConfig":
         if self.teacher.embedding_dim is not None and self.teacher.embedding_dim <= self.student.embedding_dim:
             raise ValueError("teacher.embedding_dim must be greater than student.embedding_dim.")
 
-        student_methods = set(parse_distiller_methods(self.student.model))
         strategy_methods = set(parse_distiller_methods(self.distillation.strategy))
-        if student_methods and strategy_methods and student_methods != strategy_methods:
-            raise ValueError(
-                "student.model and distillation.strategy must describe the same active distiller methods."
-            )
 
-        active_methods = student_methods or strategy_methods
+        active_methods = strategy_methods
         lambda_by_method = {
             "DE": float(getattr(self.distillation, "lambda_de", 0.0)),
             "RRD": float(getattr(self.distillation, "lambda_rrd", 0.0)),
@@ -304,7 +233,7 @@ class RecDistillTrainingConfig(BaseModel):
         topology = getattr(self.distillation, "topology", {}) or {}
         lambda_td = float(topology.get("lambda_td", getattr(self.distillation, "lambda_td", 0.0)))
         if lambda_td > 0.0 and {"HTD", "FTD"}.isdisjoint(active_methods):
-            raise ValueError("lambda_td > 0 requires HTD or FTD in student.model/distillation.strategy.")
+            raise ValueError("lambda_td > 0 requires HTD or FTD in distillation.strategy.")
         for method, value in lambda_by_method.items():
             if value > 0.0 and method not in active_methods:
                 raise ValueError(f"lambda for {method} is > 0 but {method} is not active.")
@@ -313,7 +242,7 @@ class RecDistillTrainingConfig(BaseModel):
 
 class RecDistillConfig(BaseModel):
     """Root RecDistill configuration."""
-    train_student: RecDistillTrainingConfig = Field(...)
+    distill_student: DistillStudentTrainingConfig = Field(...)
 
 
 class PresetMetadata(BaseModel):
@@ -321,7 +250,7 @@ class PresetMetadata(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     schema_version: int = Field(default=1)
-    kind: str = Field(..., description="Preset kind: recdistill, elliot, or raw")
+    kind: str = Field(..., description="Preset kind, for example recdistill, teacher, student, or raw")
     family: str = Field(..., description="Logical preset family")
 
 

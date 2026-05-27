@@ -146,7 +146,13 @@ def native_args_from_config_file(
         raw = yaml.safe_load(raw_text) or {}
 
     config = raw.get("config", raw) if isinstance(raw, dict) else {}
-    train = config.get("train_student", config) if isinstance(config, dict) else {}
+    config = get_config_loader().resolve_config_modules(config)
+    if not isinstance(config, dict):
+        train = {}
+    elif _normalize_role(role) == "teacher":
+        train = config.get("train_teacher", {})
+    else:
+        train = config.get("train_student", {})
     model_section_name = "teacher" if _normalize_role(role) == "teacher" else "student"
     model_conf = train.get(model_section_name, train) if isinstance(train, dict) else {}
     optim_conf = train.get("optimization", {}) if isinstance(train, dict) else {}

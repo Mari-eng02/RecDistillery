@@ -1,0 +1,39 @@
+epochs: 300
+batch_size: 512
+learning_rate: 0.001
+l2_reg: 0.0001
+validation_rate: 10
+validation_metric: ndcg@20
+bayesian:
+  enabled: true
+  n_trials: 30
+  seed: 42
+  storage: sqlite:///optuna_studies.db
+  metric: ndcg
+  search_space:
+    optimization.learning_rate:
+      type: float
+      low: 0.0001
+      high: 0.01
+      log: true
+    optimization.l2_reg:
+      type: float
+      low: 0.0001
+      high: 0.01
+      log: true
+  wandb:
+    enabled: false
+    project: null
+    entity: null
+    group: null
+  early_stopping:
+    enabled: true
+    mode: val_metric
+    metric: ndcg
+    patience: 8
+    min_delta: 0.0
+    warmup: 30
+    restore_best: true
+
+
+

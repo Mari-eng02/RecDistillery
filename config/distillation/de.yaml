@@ -1,0 +1,19 @@
+# Distillation Experts (DE) Distiller Configuration
+strategy: DE
+temperature: 0.1
+lambda_de: 0.1
+num_experts: 20
+
+bayesian:
+  search_space:
+    distillation.lambda_de:
+      type: float
+      low: 0.0001
+      high: 0.1
+      log: true
+    distillation.num_experts:
+      type: categorical
+      choices: [10, 20, 30]
+    distillation.temperature:
+      type: categorical
+      choices: [0.01, 0.1, 0.5]

@@ -1,6 +1,5 @@
 """
 RecDistill configuration integration with the new centralized config system.
-Provides backward compatibility with old YAML configs and new programmatic composition.
 """
 
 from pathlib import Path
@@ -13,7 +12,6 @@ from config import get_config_loader, RecDistillConfig
 def load_recdistill_config_from_file(config_path: Union[str, Path]) -> RecDistillConfig:
     """
     Load and validate RecDistill configuration from YAML file.
-    Supports both old-style and new-style configurations.
     
     Args:
         config_path: Path to configuration YAML file
@@ -64,8 +62,8 @@ def load_recdistill_experiment(
         ...     teacher_model='nmf',
         ...     distiller_strategy='de',
         ...     overrides={
-        ...         'train_student.optimization.epochs': 50,
-        ...         'train_student.runtime.seed': 123
+        ...         'distill_student.optimization.epochs': 50,
+        ...         'distill_student.runtime.seed': 123
         ...     }
         ... )
     """
@@ -91,22 +89,19 @@ def load_recdistill_experiment(
 
 def normalize_recdistill_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Normalize old and new RecDistill config dictionaries into RecDistillConfig shape.
-
-    Some preset shapes omit the distillation block or the distillation.strategy
-    field. This keeps those files valid while ConfigLoader-backed entry points
-    remain the canonical path.
+    Normalize RecDistill config dictionaries into RecDistillConfig shape.
     """
     if isinstance(config, dict) and "preset" in config and "config" in config:
         config = config["config"]
 
+    if isinstance(config, dict):
+        config = get_config_loader().resolve_config_modules(config)
+
     normalized = copy.deepcopy(config or {})
-    if "train_student" in normalized:
-        train_conf = normalized.get("train_student") or {}
-        normalized["train_student"] = train_conf
-    else:
-        train_conf = normalized
-        normalized = {"train_student": train_conf}
+    if "distill_student" not in normalized:
+        raise ValueError("RecDistill configs must define a top-level 'distill_student' block.")
+    train_conf = normalized.get("distill_student") or {}
+    normalized["distill_student"] = train_conf
 
     student_conf = train_conf.setdefault("student", {})
     teacher_conf = train_conf.setdefault("teacher", {})
@@ -114,13 +109,12 @@ def normalize_recdistill_config(config: Dict[str, Any]) -> Dict[str, Any]:
 
     strategy = (
         distill_conf.get("strategy")
-        or student_conf.get("model")
         or _infer_strategy_from_distillation_block(distill_conf)
         or "DE"
     )
     strategy = str(strategy).replace("-", "_").upper()
     distill_conf["strategy"] = strategy
-    student_conf.setdefault("model", strategy)
+    student_conf.pop("model", None)
     active_methods = {part for part in strategy.replace("+", "_").split("_") if part}
     if "DE" not in active_methods:
         distill_conf["lambda_de"] = 0.0
@@ -176,16 +170,16 @@ def _apply_overrides(config_dict: Dict[str, Any], overrides: Dict[str, Any]) -> 
     
     Args:
         config_dict: Base configuration dictionary
-        overrides: Dict with keys like 'train_student.optimization.epochs'
+        overrides: Dict with keys like 'distill_student.optimization.epochs'
         
     Returns:
         Configuration dictionary with overrides applied
         
     Example:
-        >>> config = {'train_student': {'optimization': {'epochs': 100}}}
-        >>> overrides = {'train_student.optimization.epochs': 50}
+        >>> config = {'distill_student': {'optimization': {'epochs': 100}}}
+        >>> overrides = {'distill_student.optimization.epochs': 50}
         >>> result = _apply_overrides(config, overrides)
-        >>> result['train_student']['optimization']['epochs']
+        >>> result['distill_student']['optimization']['epochs']
         50
     """
     import copy
@@ -267,7 +261,7 @@ def print_config_summary(config: RecDistillConfig) -> None:
     Args:
         config: RecDistillConfig object
     """
-    train_cfg = config.train_student
+    train_cfg = config.distill_student
     
     print("\n" + "=" * 70)
     print("RECDISTILL CONFIGURATION SUMMARY")
@@ -283,7 +277,7 @@ def print_config_summary(config: RecDistillConfig) -> None:
     
     print("\n👨‍🎓 STUDENT")
     print(f"  Backbone: {train_cfg.student.backbone}")
-    print(f"  Distiller: {train_cfg.student.model}")
+    print(f"  Distiller: {train_cfg.distillation.strategy}")
     print(f"  Embedding Dim: {train_cfg.student.embedding_dim}")
     
     print("\n🔬 DISTILLATION")
@@ -337,7 +331,7 @@ def validate_config(config: RecDistillConfig) -> bool:
     Returns:
         True if configuration is valid, False otherwise
     """
-    train_cfg = config.train_student
+    train_cfg = config.distill_student
     issues = []
     
     # Check embedding dimensions

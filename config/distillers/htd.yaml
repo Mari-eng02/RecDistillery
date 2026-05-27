@@ -1,7 +1,0 @@
-# Hidden Taste Distiller (HTD) Configuration
-strategy: HTD
-temperature: 3.0
-lambda_kl: 0.5
-initial_tau: 1.0
-min_tau: 1e-10
-decay_epochs: 100

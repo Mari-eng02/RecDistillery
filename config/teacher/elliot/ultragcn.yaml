@@ -1,0 +1,6 @@
+# UltraGCN Teacher Model Configuration
+framework: elliot
+model: ULTRAGCN
+embedding_dim: 200
+dropout: 0.0
+num_layers: 0

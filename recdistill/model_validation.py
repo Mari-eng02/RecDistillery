@@ -119,11 +119,11 @@ def validate_distillation_request(
 
 
 def validate_recdistill_config_dict(config: dict) -> None:
-    train_conf = config.get("train_student", config)
+    train_conf = config.get("distill_student", {})
     teacher_conf = train_conf.get("teacher", {}) or {}
     student_conf = train_conf.get("student", {}) or {}
     distill_conf = train_conf.get("distillation", {}) or {}
-    strategy = distill_conf.get("strategy") or student_conf.get("model")
+    strategy = distill_conf.get("strategy")
     validate_distillation_request(
         teacher_framework=teacher_conf.get("framework", "recbole"),
         teacher_model=teacher_conf.get("model"),

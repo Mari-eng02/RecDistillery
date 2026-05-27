@@ -1,0 +1,25 @@
+# Hidden Taste Distiller (HTD) Configuration
+strategy: HTD
+temperature: 3.0
+lambda_kl: 0.5
+initial_tau: 1.0
+min_tau: 1e-10
+decay_epochs: 100
+
+bayesian:
+  search_space:
+    distillation.topology.lambda_td:
+      type: float
+      low: 0.00001
+      high: 1
+      log: true
+    distillation.topology.alpha:
+      type: float
+      low: 0.1
+      high: 0.9
+    distillation.topology.num_groups:
+      type: categorical
+      choices: [5, 10, 20, 30, 40, 50]
+    distillation.topology.entity_sample_size:
+      type: categorical
+      choices: [128, 256, 512]

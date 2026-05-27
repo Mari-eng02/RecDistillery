@@ -11,9 +11,7 @@ from __future__ import annotations
 import argparse
 import copy
 import csv
-import itertools
 import json
-import shutil
 import shlex
 import subprocess
 import sys
@@ -62,11 +60,11 @@ def _config_value(primary: dict, secondary: dict, key: str, default=None):
     return default
 
 
-def _distiller_methods(student_model: Any) -> set[str] | None:
-    if student_model is None:
+def _distiller_methods(strategy: Any) -> set[str] | None:
+    if strategy is None:
         return None
 
-    normalized = str(student_model).upper().replace("+", "_").replace("-", "_")
+    normalized = str(strategy).upper().replace("+", "_").replace("-", "_")
     if normalized == "COMPOSITE":
         return set(_DISTILLER_METHODS)
 
@@ -74,7 +72,7 @@ def _distiller_methods(student_model: Any) -> set[str] | None:
     unknown = methods - _DISTILLER_METHODS
     if unknown:
         raise ValueError(
-            f"Unsupported student.model: {student_model}. "
+            f"Unsupported distillation.strategy: {strategy}. "
             "Supported methods: DE, RRD, UNKD, HTD, FTD, and composites joined with '+' or '_'."
         )
     if "HTD" in methods and "FTD" in methods:
@@ -93,10 +91,10 @@ def _lambda_for_method(
 ) -> float:
     value = float(_config_value(distill_conf, student_conf, key, default))
     if active_methods is not None and method not in active_methods and value != 0.0:
-        model = student_conf.get("model")
+        strategy = distill_conf.get("strategy")
         raise ValueError(
-            f"train_student.student.model is {model!r}, but {key}={value} would activate {method}. "
-            f"Use a composite model name that includes {method} or set {key}: 0.0."
+            f"distill_student.distillation.strategy is {strategy!r}, but {key}={value} would activate {method}. "
+            f"Use a composite strategy that includes {method} or set {key}: 0.0."
         )
     if active_methods is not None and method not in active_methods:
         return 0.0
@@ -104,7 +102,7 @@ def _lambda_for_method(
 
 
 def _normalize_train_conf(config: dict) -> dict:
-    return config.get("train_student", config)
+    return config["distill_student"]
 
 
 def _set_dotted(root: dict, dotted_key: str, value: Any) -> None:
@@ -143,8 +141,9 @@ def _teacher_model_label(teacher_conf: dict) -> str:
 def _experiment_tuple(train_conf: dict) -> tuple[str, str, str, str, str, str]:
     student_conf = train_conf.get("student", {}) or {}
     teacher_conf = train_conf.get("teacher", {}) or {}
+    distill_conf = train_conf.get("distillation", {}) or {}
     dataset = str(train_conf.get("dataset") or "dataset")
-    distiller = str(student_conf.get("model") or "DE")
+    distiller = str(distill_conf.get("strategy") or "DE")
     teacher_framework = str(teacher_conf.get("framework") or "recbole")
     teacher = _teacher_model_label(teacher_conf)
     student_framework = str(student_conf.get("framework") or "recbole")
@@ -168,8 +167,9 @@ def _distilled_path_from_train_conf(train_conf: dict, *, strategy: str) -> Path:
     dataset = str(train_conf.get("dataset", "dataset"))
     teacher_conf = train_conf.get("teacher", {}) or {}
     student_conf = train_conf.get("student", {}) or {}
+    distill_conf = train_conf.get("distillation", {}) or {}
     path = distilled_student_artifact_path(
-        distiller=str(student_conf.get("model") or "DE"),
+        distiller=str(distill_conf.get("strategy") or "DE"),
         teacher_framework=teacher_conf.get("framework"),
         teacher_model=_teacher_model_label(teacher_conf),
         student_framework=student_conf.get("framework"),
@@ -184,16 +184,6 @@ def _distilled_path_from_train_conf(train_conf: dict, *, strategy: str) -> Path:
         return path
 
 
-def _search_best_output_path(train_conf: dict) -> Path:
-    runtime_conf = train_conf.get("runtime", {}) or {}
-    if runtime_conf.get("output_path"):
-        return Path(runtime_conf["output_path"])
-    path = _distilled_path_from_train_conf(train_conf, strategy="best")
-    if not path.stem.endswith("_best"):
-        path = path.with_name(f"{path.stem}_best{path.suffix}")
-    return path
-
-
 def _compose_imported_teacher_experiment(
     *,
     dataset_name: str,
@@ -205,8 +195,9 @@ def _compose_imported_teacher_experiment(
     loader = get_config_loader()
     dataset = loader.load_dataset_config(dataset_name)
     student_cfg = loader.load_model_config("student", student_backbone, framework=student_framework)
-    template = copy.deepcopy(loader._load_yaml(loader.root / "experiments" / f"recdistill_template_{distiller_strategy}.yaml"))
-    distiller_cfg = loader._load_yaml(loader.root / "distillers" / f"{distiller_strategy}.yaml")
+    template = copy.deepcopy(
+        loader._load_yaml(loader.root / "composites" / "recdistill_template.yaml")
+    )
 
     teacher_model = Path(teacher_path).stem
     teacher_framework = "imported"
@@ -218,8 +209,10 @@ def _compose_imported_teacher_experiment(
     except (ValueError, IndexError):
         pass
 
-    template["train_student"]["dataset"] = dataset.name
-    template["train_student"]["teacher"].update(
+    train = template["distill_student"]
+
+    train["dataset"] = dataset.name
+    train["teacher"].update(
         {
             "framework": teacher_framework,
             "model": teacher_model,
@@ -228,16 +221,14 @@ def _compose_imported_teacher_experiment(
             "format": "checkpoint",
         }
     )
-    template["train_student"]["student"]["framework"] = student_cfg.framework
-    template["train_student"]["student"]["backbone"] = student_cfg.backbone
-    template["train_student"]["student"]["embedding_dim"] = student_cfg.embedding_dim
-    loader._copy_model_specific_fields(student_cfg, template["train_student"]["student"])
-    template["train_student"]["distillation"].update(distiller_cfg)
-    template["train_student"]["distillation"]["strategy"] = str(
-        template["train_student"]["distillation"].get("strategy", distiller_strategy)
-    ).upper()
-    template["train_student"]["student"]["model"] = template["train_student"]["distillation"]["strategy"]
-    runtime = template["train_student"].setdefault("runtime", {})
+    train["student"] = {
+        "default": f"student/{student_cfg.framework.lower()}/{student_cfg.backbone.lower()}.yaml"
+    }
+    train["distillation"] = {
+        "default": f"distillation/{str(distiller_strategy).strip().lower().replace('-', '_').replace('+', '_')}.yaml",
+        "strategy": str(distiller_strategy).replace("-", "_").upper(),
+    }
+    runtime = train.setdefault("runtime", {})
     runtime["output_path"] = str(
         distilled_student_artifact_path(
             distiller=distiller_strategy,
@@ -251,15 +242,6 @@ def _compose_imported_teacher_experiment(
         ).relative_to(REPO_ROOT)
     ).replace("\\", "/")
     return recdistill_config_to_dict(normalize_recdistill_config(template))
-
-
-def _copy_artifact_with_history(source_path: Path, destination_path: Path) -> None:
-    destination_path.parent.mkdir(parents=True, exist_ok=True)
-    destination_path.parent.parent.joinpath("perf").mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source_path, destination_path)
-    source_history = source_path.with_suffix(".history.json")
-    if source_history.exists():
-        shutil.copy2(source_history, destination_path.with_suffix(".history.json"))
 
 
 def _tracked_results_dir(train_conf: dict, config_path: Path) -> Path:
@@ -280,84 +262,16 @@ def _tracked_results_dir(train_conf: dict, config_path: Path) -> Path:
     )
 
 
-def _expand_range_spec(spec: Any) -> list[Any]:
-    if isinstance(spec, list):
-        if not spec:
-            raise ValueError("Grid-search list values cannot be empty.")
-        return spec
-
-    if isinstance(spec, dict):
-        if "values" in spec:
-            values = spec["values"]
-            if not isinstance(values, list) or not values:
-                raise ValueError("Grid-search 'values' must be a non-empty list.")
-            return values
-        if {"start", "stop", "step"}.issubset(spec.keys()):
-            start = spec["start"]
-            stop = spec["stop"]
-            step = spec["step"]
-            if step == 0:
-                raise ValueError("Grid-search 'step' cannot be zero.")
-            values = []
-            current = start
-            epsilon = abs(step) * 1e-9
-            if step > 0:
-                while current <= stop + epsilon:
-                    values.append(current)
-                    current += step
-            else:
-                while current >= stop - epsilon:
-                    values.append(current)
-                    current += step
-            if not values:
-                raise ValueError(f"Grid-search range generated no values: {spec}")
-            if all(isinstance(v, int) for v in (start, stop, step)):
-                values = [int(v) for v in values]
-            return values
-    raise ValueError(
-        "Each grid-search parameter must be either a list, "
-        "a {'values': [...]} object, or a {'start','stop','step'} range object."
-    )
-
-
-def _materialize_grid_overrides(config: dict) -> tuple[list[dict[str, Any]], dict]:
-    train_conf = _normalize_train_conf(config)
-    optim_conf = train_conf.get("optimization", {}) or {}
-    grid_conf = optim_conf.get("grid_search", train_conf.get("grid_search", {})) or {}
-    if not grid_conf.get("enabled", False):
-        return [{}], grid_conf
-
-    parameters = grid_conf.get("parameters", {})
-    if not isinstance(parameters, dict) or not parameters:
-        raise ValueError(
-            "train_student.optimization.grid_search.parameters must be a non-empty mapping when enabled=true."
-        )
-
-    keys = list(parameters.keys())
-    value_lists = [_expand_range_spec(parameters[key]) for key in keys]
-    overrides = [dict(zip(keys, combo)) for combo in itertools.product(*value_lists)]
-    if not overrides:
-        raise ValueError("Grid search produced zero combinations.")
-    return overrides, grid_conf
-
-
 def _build_run_config(
     base_config: dict,
-    overrides: dict[str, Any],
     run_idx: int,
     total_runs: int,
-    grid_conf: dict,
+    output_dir: Path | None,
     strategy: str,
     create_dirs: bool = True,
 ) -> tuple[dict, str]:
     config = copy.deepcopy(base_config)
     train_conf = _normalize_train_conf(config)
-
-    for dotted_key, value in overrides.items():
-        normalized_key = dotted_key
-        if normalized_key.startswith("train_student."):
-            normalized_key = normalized_key[len("train_student.") :]
-        _set_dotted(train_conf, normalized_key, value)
 
     run_id = f"run_{run_idx:04d}"
     dataset = str(train_conf.get("dataset", "dataset"))
@@ -365,20 +279,16 @@ def _build_run_config(
     student_backbone = str(train_conf.get("student", {}).get("backbone", "student"))
     canonical_output_path = _distilled_path_from_train_conf(train_conf, strategy="fixed")
     default_base_output_dir = canonical_output_path.parent.parent
-    if strategy == "grid":
-        default_base_output_dir = _distilled_path_from_train_conf(train_conf, strategy="grid").parent.parent
-    base_output_dir = Path(grid_conf.get("output_dir") or default_base_output_dir)
+    base_output_dir = Path(output_dir or default_base_output_dir)
     if create_dirs:
         base_output_dir.mkdir(parents=True, exist_ok=True)
         (base_output_dir / "wei").mkdir(parents=True, exist_ok=True)
         (base_output_dir / "perf").mkdir(parents=True, exist_ok=True)
 
-    override_slug = "_".join(f"{key}={value}" for key, value in overrides.items()) or "single"
-    override_slug = _safe_slug(override_slug, max_len=90)
-    if strategy == "fixed" and not overrides:
+    if strategy == "fixed":
         output_path = canonical_output_path
     else:
-        output_filename = f"{run_id}_{override_slug}{DISTILLED_STUDENT_EXT}"
+        output_filename = f"{run_id}_single{DISTILLED_STUDENT_EXT}"
         output_path = base_output_dir / "wei" / output_filename
     runtime_conf = train_conf.get("runtime", {}) or {}
     existing_output_path = runtime_conf.get("output_path")
@@ -398,8 +308,6 @@ def _build_run_config(
         "total_runs": total_runs,
         "output_path": str(output_path),
         "base_output_dir": str(base_output_dir),
-        "overrides": overrides,
-        "override_slug": override_slug,
     }
     return config, metadata
 
@@ -426,7 +334,7 @@ def build_command(config: dict) -> list[str]:
 
     dataset = train_conf.get("dataset")
     if not dataset:
-        raise ValueError("Missing required field: train_student.dataset")
+        raise ValueError("Missing required field: distill_student.dataset")
 
     cmd = [str(python_bin), str(script), "--dataset", str(dataset)]
 
@@ -437,20 +345,14 @@ def build_command(config: dict) -> list[str]:
         _add_arg(cmd, "--teacher-embedding-dim", teacher_conf.get("embedding_dim"))
         _add_arg(cmd, "--teacher-framework", teacher_conf.get("framework"))
         _add_arg(cmd, "--teacher-format", teacher_conf.get("format"))
-        _add_arg(cmd, "--teacher-adapter", teacher_conf.get("adapter"))
-        _add_arg(cmd, "--teacher-user-embeddings-path", teacher_conf.get("user_embeddings_path"))
-        _add_arg(cmd, "--teacher-item-embeddings-path", teacher_conf.get("item_embeddings_path"))
-        _add_arg(cmd, "--teacher-score-matrix-path", teacher_conf.get("score_matrix_path"))
-        _add_arg(cmd, "--teacher-topk-items-path", teacher_conf.get("topk_items_path"))
-        _add_arg(cmd, "--teacher-topk-scores-path", teacher_conf.get("topk_scores_path"))
 
     student_backbone = student_conf.get("backbone")
     if not student_backbone:
-        raise ValueError("Missing required field: train_student.student.backbone")
+        raise ValueError("Missing required field: distill_student.student.backbone")
     supported_student_backbones = {"BPRMF", "BPR", "LINE", "LGCN", "LIGHTGCN", "NGCF", "DGCF", "SGL", "ULTRAGCN", "ULTRA_GCN", "SPECTRALCF", "SPECTRAL_CF", "NMF", "NFM", "NEUMF"}
     if str(student_backbone).upper() not in supported_student_backbones:
         raise ValueError(
-            f"Unsupported train_student.student.backbone: {student_backbone}. "
+            f"Unsupported distill_student.student.backbone: {student_backbone}. "
             "Currently supported: BPRMF, LINE, LGCN, NGCF, DGCF, SGL, UltraGCN, SpectralCF, NMF."
         )
     _add_arg(cmd, "--student-backbone", student_backbone)
@@ -473,8 +375,8 @@ def build_command(config: dict) -> list[str]:
     _add_arg(cmd, "--learning-rate", optim_conf.get("learning_rate"))
     _add_arg(cmd, "--l2-reg", optim_conf.get("l2_reg"))
 
-    student_model = student_conf.get("model")
-    active_methods = _distiller_methods(student_model)
+    strategy_name = distill_conf.get("strategy")
+    active_methods = _distiller_methods(strategy_name)
 
     _add_arg(
         cmd,
@@ -571,13 +473,13 @@ def build_command(config: dict) -> list[str]:
     lambda_td = float(lambda_td)
     if active_methods is not None and {"HTD", "FTD"}.isdisjoint(active_methods) and lambda_td != 0.0:
         raise ValueError(
-            f"train_student.student.model is {student_model!r}, but lambda_td={lambda_td} would activate topology distillation. "
-            "Use HTD/FTD in student.model or set lambda_td: 0.0."
+            f"distill_student.distillation.strategy is {strategy_name!r}, but lambda_td={lambda_td} would activate topology distillation. "
+            "Use HTD/FTD in distillation.strategy or set lambda_td: 0.0."
         )
     if active_methods is not None and lambda_td != 0.0 and td_type in {"HTD", "FTD"} and td_type not in active_methods:
         raise ValueError(
-            f"train_student.student.model is {student_model!r}, but topology.type is {td_type}. "
-            f"Use student.model: {td_type} or set topology.type to a method included in student.model."
+            f"distill_student.distillation.strategy is {strategy_name!r}, but topology.type is {td_type}. "
+            f"Use distillation.strategy: {td_type} or set topology.type to a method included in distillation.strategy."
         )
     if active_methods is not None and {"HTD", "FTD"}.isdisjoint(active_methods):
         lambda_td = 0.0
@@ -663,7 +565,7 @@ def build_command(config: dict) -> list[str]:
 
     extra_args = runtime_conf.get("extra_args", [])
     if not isinstance(extra_args, list):
-        raise ValueError("train_student.runtime.extra_args must be a list.")
+        raise ValueError("distill_student.runtime.extra_args must be a list.")
     cmd.extend(str(arg) for arg in extra_args)
 
     return cmd
@@ -857,9 +759,8 @@ def main() -> None:
             )
             teacher_label = args.teacher_model
             teacher_framework_label = args.teacher_framework
-        preset_path = get_config_loader().save_generated_preset(
+        experiment_path = get_config_loader().save_generated_experiment(
             kind="recdistill",
-            family="generated",
             name=f"{args.distiller}_{teacher_framework_label}_{teacher_label}_{args.student_framework}_{args.student_backbone or teacher_label}_{args.dataset}",
             path_parts=[
                 args.distiller,
@@ -869,27 +770,27 @@ def main() -> None:
                 args.student_backbone or teacher_label,
                 args.dataset,
             ],
-            config=config,
+            config={"distill_student": _normalize_train_conf(config)},
         )
-        print(f"Generated RecDistill config saved to: {preset_path}")
-        config_path = preset_path
+        print(f"Generated RecDistill config saved to: {experiment_path}")
+        config_path = experiment_path
 
     run_conf = config.get("run", {})
     train_conf = _normalize_train_conf(config)
     if args.output_strategy:
         _set_dotted(train_conf, "runtime.output_strategy", args.output_strategy)
     optim_conf = train_conf.get("optimization", {}) or {}
-    optuna_conf = (
-        optim_conf.get("optuna")
-        or train_conf.get("optuna")
-        or config.get("optuna")
+    bayesian_conf = (
+        optim_conf.get("bayesian")
+        or train_conf.get("bayesian")
+        or config.get("bayesian")
         or {}
     )
 
     config_dry_run = bool(run_conf.get("dry_run", False))
     dry_run = args.dry_run or config_dry_run
 
-    if bool(optuna_conf.get("enabled", False)):
+    if bool(bayesian_conf.get("enabled", False)):
         python_bin = run_conf.get("python", sys.executable)
         optuna_script = run_conf.get("optuna_script", "scripts/recdistill/run_optuna.py")
         optuna_cmd = [str(python_bin), str(optuna_script), "--config", str(config_path)]
@@ -902,24 +803,19 @@ def main() -> None:
         subprocess.run(optuna_cmd, check=True)
         return
 
-    overrides_list, grid_conf = _materialize_grid_overrides(config)
-    total_runs = len(overrides_list)
-    fail_fast = bool(grid_conf.get("fail_fast", False))
-    strategy = "grid" if bool(grid_conf.get("enabled", False)) else "fixed"
-    if args.track:
-        grid_conf = dict(grid_conf)
-        grid_conf["output_dir"] = str(_tracked_results_dir(train_conf, config_path))
+    total_runs = 1
+    strategy = "tracked" if args.track else "fixed"
+    output_dir = _tracked_results_dir(train_conf, config_path) if args.track else None
 
     records: list[dict[str, Any]] = []
     last_output_dir: Path | None = None
 
-    for run_idx, overrides in enumerate(overrides_list, start=1):
+    for run_idx in range(1, total_runs + 1):
         run_config, metadata = _build_run_config(
             base_config=config,
-            overrides=overrides,
             run_idx=run_idx,
             total_runs=total_runs,
-            grid_conf=grid_conf,
+            output_dir=output_dir,
             strategy=strategy,
             create_dirs=not dry_run,
         )
@@ -940,7 +836,6 @@ def main() -> None:
             "output_path": str(output_path),
             "training_time_sec": 0.0,
             "avg_epoch_time_sec": 0.0,
-            **{f"param.{key}": value for key, value in overrides.items()},
         }
 
         if dry_run:
@@ -980,10 +875,6 @@ def main() -> None:
         record["best_checkpoint_path"] = str(output_path) if output_path.exists() and checkpoint_metrics.get("best_epoch") else None
         records.append(record)
 
-        if status == "failed" and fail_fast:
-            print("Grid search stopped due to failure (fail_fast=true).")
-            break
-
     if last_output_dir is None:
         raise RuntimeError("Unable to resolve output directory for recap files.")
 
@@ -997,25 +888,6 @@ def main() -> None:
 
     json_path, tsv_path = _write_recap_files(ranked_records, last_output_dir)
 
-    if strategy == "grid":
-        best_completed = next(
-            (
-                row
-                for row in ranked_records
-                if row.get("status") == "completed" and row.get("final_checkpoint_path")
-            ),
-            None,
-        )
-        if best_completed is not None:
-            source_path = Path(best_completed["final_checkpoint_path"])
-            best_output_path = _search_best_output_path(train_conf)
-            if source_path.exists():
-                _copy_artifact_with_history(source_path, best_output_path)
-                best_completed["promoted_best_checkpoint_path"] = str(best_output_path)
-                best_meta_path = best_output_path.parent.parent / "perf" / "best_grid_run.json"
-                best_meta_path.write_text(json.dumps(best_completed, indent=2, ensure_ascii=False), encoding="utf-8")
-                print(f"Promoted best grid artifact: {best_output_path}")
-
     print(f"{strategy.capitalize()} run recap:")
     for row in ranked_records[: min(10, len(ranked_records))]:
         print(
@@ -1028,7 +900,7 @@ def main() -> None:
     print(f"Saved recap TSV: {tsv_path}")
 
     if not dry_run and any(row.get("status") == "failed" for row in records):
-        raise RuntimeError("One or more grid-search runs failed. Check recap files for details.")
+        raise RuntimeError("Training run failed. Check recap files for details.")
 
 
 if __name__ == "__main__":

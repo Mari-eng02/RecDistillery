@@ -1,7 +1,0 @@
-# LINE Teacher Model Configuration
-framework: recbole
-model: LINE
-embedding_dim: 200
-learning_rate: 0.001
-l2_reg: 0.0001
-dropout: 0.01

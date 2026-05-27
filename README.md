@@ -56,7 +56,7 @@ The dataset preprocessing and standardized data management are based on `DataRec
   - [Student Training](#student-training)
   - [Student Distillation](#student-distillation)
   - [Experiment Launchers](#experiment-launchers)
-- [Configs And Presets](#configs-and-presets)
+- [Configs And Experiments](#configs-and-experiments)
 - [Evaluation](#evaluation)
 - [Results Structure](#results-structure)
 - [Timing Analysis](#timing-analysis)
@@ -208,8 +208,8 @@ item_embeddings() -> torch.Tensor
 5. Add model configs for teacher and/or student:
 
 ```text
-config/models/teacher/<framework>/<model>.yaml
-config/models/student/<framework>/<model>.yaml
+config/teacher/<framework>/<model>.yaml
+config/student/<framework>/<model>.yaml
 ```
 
 6. Run the compatibility check again:
@@ -255,8 +255,7 @@ python scripts/recdistill/import_teacher.py \
   --format predictions_json \
   --framework external \
   --model-name ExternalTeacher \
-  --dataset citeulike \
-  --embedding-dim 200
+  --dataset citeulike
 ```
 
 Import a `.pth` checkpoint with user/item embeddings:
@@ -288,11 +287,11 @@ python scripts/teacher_training/teacher_training.py \
   --dataset citeulike
 ```
 
-Alternatively, use a preset config file:
+Alternatively, use a complete experiment config file:
 
 ```bash
 python scripts/teacher_training/teacher_training.py \
-  --config config/presets/teacher/<framework>/<model>/<dataset>/<preset>.yaml
+  --config config/experiments/teacher/<experiment>.yaml
 ```
 
 This script trains a teacher model, exports a `.teacher` file, and makes it available for later distillation or evaluation.
@@ -335,7 +334,7 @@ Or use a config file for the student training run:
 
 ```bash
 python scripts/student_training/student_training.py \
-  --config config/presets/student/<framework>/<backbone>/<dataset>/<preset>.yaml
+  --config config/experiments/student/<experiment>.yaml
 ```
 
 The output is a `.student` artifact that can be evaluated or later compared with distilled students.
@@ -410,36 +409,32 @@ bash experiments/baseline/teacher_training.sh [teacher_framework] [teacher_model
 
 ---
 
-# Configs And Presets
+# Configs And Experiments
 
 The canonical config package is `config/`.
 
 ```text
 config/
-  datasets/           Dataset definitions
-  models/             Teacher/student model defaults
-  distillers/         Distiller defaults
-  experiments/        Composable templates
-  presets/            Ready-to-run and generated presets
+  dataset/            Dataset definitions
+  teacher/            Teacher model defaults
+  student/            Student model defaults
+  distillation/       Distiller defaults
+  optimization/       Optimization defaults
+  runtime/            Runtime defaults
+  evaluation/         Evaluation defaults
+  composites/         Composable templates
+  experiments/        Complete experiment configs
 ```
 
-Ready-to-run RecDistill presets are under:
+Complete experiment configs are under:
 
 ```text
-config/presets/teacher/
-config/presets/student/
-config/presets/recdistill/
+config/experiments/teacher/
+config/experiments/student/
+config/experiments/recdistill/
 ```
 
-On-the-fly generated configs are saved under:
-
-```text
-config/presets/teacher/generated/
-config/presets/student/generated/
-config/presets/recdistill/generated/
-```
-
-AGGIUNGERE best/ e search/ con templates per ottimizzazione bayesiana e con best parameters.
+On-the-fly generated configs are saved there too.
 
 ---
 

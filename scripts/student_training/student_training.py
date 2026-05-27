@@ -98,42 +98,42 @@ if __name__ == "__main__":
                 model_name=args.backbone,
                 framework=args.framework,
             )
-            preset_path = loader.save_generated_preset(
+            train_config = composed_config["train_student"]
+            experiment_path = loader.save_generated_experiment(
                 kind="student",
-                family="generated",
                 name=(
-                    f"{composed_config['student']['framework']}_"
-                    f"{composed_config['student']['backbone']}_"
-                    f"{composed_config['dataset']}_"
-                    f"{composed_config['student']['embedding_dim']}"
+                    f"{train_config['student']['framework']}_"
+                    f"{train_config['student']['backbone']}_"
+                    f"{train_config['dataset']}_"
+                    f"{train_config['student']['embedding_dim']}"
                 ),
                 path_parts=[
-                    composed_config["student"]["framework"],
-                    composed_config["student"]["backbone"],
-                    composed_config["dataset"],
+                    train_config["student"]["framework"],
+                    train_config["student"]["backbone"],
+                    train_config["dataset"],
                 ],
                 config=composed_config,
             )
             train_args = native_args_from_config_file(
-                preset_path,
+                experiment_path,
                 role="student",
                 fallback_dataset=args.dataset,
                 fallback_backbone=args.backbone,
                 overrides=overrides,
             )
-            print(f"Generated student config saved to: {preset_path}")
+            print(f"Generated student config saved to: {experiment_path}")
         NativeModelTrainingRunner(train_args).run()
     else:
         if args.config:
             config = load_recdistill_config_from_file(args.config)
             try:
                 validate_distillation_request(
-                    teacher_framework=config.train_student.teacher.framework,
-                    teacher_model=config.train_student.teacher.model,
-                    student_framework=config.train_student.student.framework,
-                    student_backbone=config.train_student.student.backbone,
-                    distiller=config.train_student.distillation.strategy,
-                    validate_teacher=not bool(config.train_student.teacher.path),
+                    teacher_framework=config.distill_student.teacher.framework,
+                    teacher_model=config.distill_student.teacher.model,
+                    student_framework=config.distill_student.student.framework,
+                    student_backbone=config.distill_student.student.backbone,
+                    distiller=config.distill_student.distillation.strategy,
+                    validate_teacher=not bool(config.distill_student.teacher.path),
                 )
             except ValueError as exc:
                 parser.error(str(exc))
@@ -157,19 +157,18 @@ if __name__ == "__main__":
                 teacher_framework=args.teacher_framework,
                 student_framework=args.framework,
             )
-            preset_path = get_config_loader().save_generated_preset(
+            experiment_path = get_config_loader().save_generated_experiment(
                 kind="recdistill",
-                family="generated",
                 name=f"{distillation}_{args.teacher_framework}_{args.teacher_model or args.backbone}_{args.framework}_{args.backbone}_{args.dataset}",
                 path_parts=[distillation, args.teacher_framework, args.teacher_model or args.backbone, args.framework, args.backbone, args.dataset],
                 config=recdistill_config_to_dict(config),
             )
-            print(f"Generated RecDistill config saved to: {preset_path}")
+            print(f"Generated RecDistill config saved to: {experiment_path}")
         if args.output_path is not None:
-            config.train_student.runtime.output_path = args.output_path
+            config.distill_student.runtime.output_path = args.output_path
         if args.framework is not None:
-            config.train_student.student.framework = args.framework
+            config.distill_student.student.framework = args.framework
         if args.skip_eval:
-            config.train_student.evaluation.enabled = False
-        set_seed(int(config.train_student.runtime.seed))
+            config.distill_student.evaluation.enabled = False
+        set_seed(int(config.distill_student.runtime.seed))
         RecDistillExperimentRunner.from_config(config).run()

@@ -1,0 +1,6 @@
+# NMF Teacher Model Configuration
+framework: elliot
+model: NMF
+embedding_dim: 200
+dropout: 0.01
+mlp_hidden_size: [64, 32, 16, 8]

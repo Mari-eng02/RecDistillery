@@ -1,0 +1,23 @@
+# Relaxed Ranking Distillation (RRD) Configuration
+strategy: RRD
+lambda_rrd: 0.1
+lambda_de: 0.0
+rrd:
+  interesting_size: 40
+  uninteresting_size: 50
+  temperature: 1.0
+  teacher_topk: 500
+
+bayesian:
+  search_space:
+    distillation.lambda_rrd:
+      type: float
+      low: 0.00001
+      high: 1
+      log: true
+    distillation.interesting_size:
+      type: categorical
+      choices: [10, 20, 30, 40, 50]
+    distillation.uninteresting_size:
+      type: categorical
+      choices: [10, 20, 30, 40, 50]

@@ -1,0 +1,5 @@
+# BPRMF Teacher Model Configuration
+framework: elliot
+model: BPRMF
+embedding_dim: 200
+dropout: 0.0

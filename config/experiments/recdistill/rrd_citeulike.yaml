@@ -1,0 +1,25 @@
+distill_student:
+  dataset: citeulike
+
+  teacher:
+    default: teacher/recbole/sgl.yaml
+
+  student:
+    default: student/recbole/sgl.yaml
+
+  optimization:
+    default: optimization/default.yaml
+    batch_size: 4096
+
+  distillation:
+    strategy: RRD
+    default: distillation/rrd.yaml
+
+  runtime:
+    default: runtime/default.yaml
+    num_workers: 4
+
+  evaluation:
+    default: evaluation/default.yaml
+    batch_size: 1024
+  

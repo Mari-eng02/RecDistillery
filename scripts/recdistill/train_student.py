@@ -26,7 +26,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from recdistill.evaluation import evaluate_embeddings, evaluate_student
 from recdistill.experiment_runner import RecDistillExperimentRunner
-from recdistill.model_validation import validate_distillation_request, validate_teacher_representation_request
+from recdistill.model_validation import validate_distillation_request
 from recdistill.paths import resolve_student_checkpoint_from_args, resolve_teacher_checkpoint_from_args
 from recdistill.tracking import WandBRunLogger, resolve_wandb_logger
 from recdistill.training import (
@@ -66,12 +66,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--teacher-path", default=None, help="Optional explicit path to teacher .teacher file")
     parser.add_argument("--teacher-framework", default="auto", help="Teacher source framework or adapter family")
     parser.add_argument("--teacher-format", default="auto", help="Teacher source artifact format")
-    parser.add_argument("--teacher-adapter", default=None, help="Custom TeacherAdapter import path")
-    parser.add_argument("--teacher-user-embeddings-path", default=None, help="Optional .npy user embeddings for generic teacher import")
-    parser.add_argument("--teacher-item-embeddings-path", default=None, help="Optional .npy item embeddings for generic teacher import")
-    parser.add_argument("--teacher-score-matrix-path", default=None, help="Optional dense user-item score matrix .npy for generic teacher import")
-    parser.add_argument("--teacher-topk-items-path", default=None, help="Optional top-k item ids .npy for generic teacher import")
-    parser.add_argument("--teacher-topk-scores-path", default=None, help="Optional top-k scores .npy for generic teacher import")
     parser.add_argument(
         "--student-backbone",
         type=str,
@@ -161,17 +155,6 @@ def validate_args(args: argparse.Namespace) -> None:
         student_backbone=args.student_backbone,
         distiller=distiller,
         validate_teacher=teacher_framework in {"recbole", "elliot", "lenskit"} and bool(args.teacher_model) and not bool(args.teacher_path),
-    )
-    validate_teacher_representation_request(
-        teacher_conf={
-            "format": args.teacher_format,
-            "user_embeddings_path": args.teacher_user_embeddings_path,
-            "item_embeddings_path": args.teacher_item_embeddings_path,
-            "score_matrix_path": args.teacher_score_matrix_path,
-            "topk_items_path": args.teacher_topk_items_path,
-            "topk_scores_path": args.teacher_topk_scores_path,
-        },
-        distiller=distiller,
     )
 
 

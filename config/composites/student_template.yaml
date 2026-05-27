@@ -1,0 +1,17 @@
+# Generic Student Training Template
+train_student:
+  dataset: null
+
+  student:
+    default: null
+
+  optimization:
+    default: optimization/default.yaml
+    batch_size: 2048
+
+  runtime:
+    default: runtime/default.yaml
+
+  evaluation:
+    default: evaluation/default.yaml
+    batch_size: 1024

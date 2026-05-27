@@ -1,8 +1,0 @@
-# SGL Student Model Configuration
-framework: recbole
-backbone: SGL
-embedding_dim: 20
-learning_rate: 0.001
-l2_reg: 0.0001
-dropout: 0.01
-num_layers: 2

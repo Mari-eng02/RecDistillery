@@ -1,0 +1,26 @@
+# Unknown Knowledge Distiller (UnKD) Configuration
+strategy: UnKD
+lambda_unkd: 0.1
+unkd:
+  sample_num: 30
+  group_count: 4
+  popularity_lambda: 1.0
+  rank_top_k: 1000
+  rank_temperature: 20.0
+
+bayesian:
+  search_space:
+    distillation.lambda_unkd:
+      type: categorical
+      choices: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    distillation.unkd.sample_num:
+      type: categorical
+      choices: [30, 40]
+    distillation.unkd.group_count:
+      type: categorical
+      choices: [2, 3, 4, 5, 6, 7, 8, 9, 10]
+    distillation.unkd.popularity_lambda:
+      type: float
+      low: 0.1
+      high: 2.0
+      log: true

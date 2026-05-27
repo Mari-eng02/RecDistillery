@@ -1,0 +1,26 @@
+distill_student:
+  dataset: citeulike
+
+  teacher:
+    default: teacher/lenskit/bprmf.yaml
+
+  student:
+    default: student/lenskit/bprmf.yaml
+
+  optimization:
+    default: optimization/default.yaml
+    batch_size: 2048
+
+  distillation:
+    strategy: FTD
+    default: distillation/ftd.yaml
+
+  runtime:
+    default: runtime/default.yaml
+    num_workers: 4
+
+  evaluation:
+    default: evaluation/default.yaml
+    batch_size: 1024
+
+  

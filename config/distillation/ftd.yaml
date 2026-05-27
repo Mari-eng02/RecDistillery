@@ -1,0 +1,17 @@
+# Logit-based Factorization Distiller (FTD) Configuration
+strategy: FTD
+temperature: 3.0
+lambda_kl: 0.5
+temperature_scheduler: linear
+decay_rate: 0.95
+
+bayesian:
+  search_space:
+    distillation.topology.lambda_td:
+      type: float
+      low: 0.00001
+      high: 1
+      log: true
+    distillation.topology.entity_sample_size:
+      type: categorical
+      choices: [128, 256, 512]

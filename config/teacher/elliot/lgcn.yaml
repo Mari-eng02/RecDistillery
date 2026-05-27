@@ -1,0 +1,6 @@
+# LGCN Teacher Model Configuration
+framework: elliot
+model: LGCN
+embedding_dim: 200
+dropout: 0.1
+num_layers: 2

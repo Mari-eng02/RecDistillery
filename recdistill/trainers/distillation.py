@@ -33,7 +33,7 @@ class DistillationTrainer(Trainer):
         config: RecDistillConfig | None = None,
     ):
         self.config = config
-        self.train_config = config.train_student if config is not None else None
+        self.train_config = config.distill_student if config is not None else None
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.optimizer = optimizer

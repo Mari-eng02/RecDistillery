@@ -1,0 +1,6 @@
+# SpectralCF Teacher Model Configuration
+framework: recbole
+model: SPECTRALCF
+embedding_dim: 200
+dropout: 0.01
+num_layers: 2

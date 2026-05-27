@@ -1,0 +1,7 @@
+# Amazon CD Dataset Configuration
+name: amazon_cd
+train_path: data/amazon_cd/train.tsv
+validation_path: data/amazon_cd/val.tsv
+test_path: data/amazon_cd/test.tsv
+column_names: ['userId', 'itemId', 'rating', 'timestamp']
+kcore: [10, 10]

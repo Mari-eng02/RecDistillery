@@ -1,5 +1,0 @@
-# Distillation Experts (DE) Distiller Configuration
-strategy: DE
-temperature: 0.1
-lambda_de: 0.1
-num_experts: 20

@@ -71,9 +71,6 @@ class RecDistillExperimentRunner:
             "teacher_path": str(self.teacher_path) if self.teacher_path is not None else None,
             "teacher_framework": getattr(self.args, "teacher_framework", "auto"),
             "teacher_format": getattr(self.args, "teacher_format", "auto"),
-            "teacher_score_matrix_path": getattr(self.args, "teacher_score_matrix_path", None),
-            "teacher_topk_items_path": getattr(self.args, "teacher_topk_items_path", None),
-            "teacher_topk_scores_path": getattr(self.args, "teacher_topk_scores_path", None),
             "teacher_embedding_dim": self.args.teacher_embedding_dim,
             "student_backbone": self.student_backbone,
             "student_framework": self.args.student_framework,
@@ -591,7 +588,7 @@ class RecDistillExperimentRunner:
 
 
 def runner_args_from_config(config: RecDistillConfig) -> SimpleNamespace:
-    train = config.train_student
+    train = config.distill_student
     teacher = train.teacher
     student = train.student
     distillation = train.distillation
@@ -612,12 +609,6 @@ def runner_args_from_config(config: RecDistillConfig) -> SimpleNamespace:
         teacher_path=teacher.path,
         teacher_framework=getattr(teacher, "framework", "auto"),
         teacher_format=getattr(teacher, "format", "auto"),
-        teacher_adapter=getattr(teacher, "adapter", None),
-        teacher_user_embeddings_path=getattr(teacher, "user_embeddings_path", None),
-        teacher_item_embeddings_path=getattr(teacher, "item_embeddings_path", None),
-        teacher_score_matrix_path=getattr(teacher, "score_matrix_path", None),
-        teacher_topk_items_path=getattr(teacher, "topk_items_path", None),
-        teacher_topk_scores_path=getattr(teacher, "topk_scores_path", None),
         student_backbone=student.backbone,
         student_framework=getattr(student, "framework", "recbole"),
         student_embedding_dim=student.embedding_dim,
@@ -694,25 +685,14 @@ def _dict_section(config: Any, name: str) -> dict[str, Any]:
 
 
 def _teacher_source_from_args(args: Any) -> TeacherSource:
-    user_embeddings_path = getattr(args, "teacher_user_embeddings_path", None)
-    item_embeddings_path = getattr(args, "teacher_item_embeddings_path", None)
-    score_matrix_path = getattr(args, "teacher_score_matrix_path", None)
-    topk_items_path = getattr(args, "teacher_topk_items_path", None)
-    topk_scores_path = getattr(args, "teacher_topk_scores_path", None)
     teacher_path = getattr(args, "teacher_path", None)
-    if teacher_path is None and not (user_embeddings_path and item_embeddings_path) and not score_matrix_path and not topk_items_path:
+    if teacher_path is None:
         teacher_path = resolve_teacher_checkpoint_from_args(args)
     return TeacherSource(
         path=Path(teacher_path) if teacher_path is not None else None,
         framework=getattr(args, "teacher_framework", "auto") or "auto",
         format=getattr(args, "teacher_format", "auto") or "auto",
         model_name=getattr(args, "teacher_model", None),
-        adapter=getattr(args, "teacher_adapter", None),
-        user_embeddings_path=Path(user_embeddings_path) if user_embeddings_path is not None else None,
-        item_embeddings_path=Path(item_embeddings_path) if item_embeddings_path is not None else None,
-        score_matrix_path=Path(score_matrix_path) if score_matrix_path is not None else None,
-        topk_items_path=Path(topk_items_path) if topk_items_path is not None else None,
-        topk_scores_path=Path(topk_scores_path) if topk_scores_path is not None else None,
         metadata={},
     )
 

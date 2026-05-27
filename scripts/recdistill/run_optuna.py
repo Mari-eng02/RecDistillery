@@ -3,7 +3,7 @@ Optuna-based Bayesian hyperparameter optimization for student distillation train
 
 Example:
     python scripts/recdistill/run_optuna.py \
-        --config config/presets/recdistill/search/de_template.yaml
+        --config config/experiments/recdistill/de_search_example.yaml
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ def load_config(config_path: Path) -> dict:
 
 
 def _normalize_train_conf(config: dict) -> dict:
-    return config.get("train_student", config)
+    return config["distill_student"]
 
 
 def _set_dotted(root: dict, dotted_key: str, value: Any) -> None:
@@ -233,7 +233,7 @@ def _safe_slug(value: str, max_len: int = 80) -> str:
 def _experiment_tuple(train_conf: dict, *, dataset: str, model: str) -> tuple[str, str, str, str, str, str]:
     teacher_conf = train_conf.get("teacher", {}) or {}
     student_conf = train_conf.get("student", {}) or {}
-    distiller = str(student_conf.get("model") or "DE")
+    distiller = str((train_conf.get("distillation", {}) or {}).get("strategy") or "DE")
     teacher_framework = str(teacher_conf.get("framework") or "recbole")
     teacher = str(teacher_conf.get("model") or model)
     student_framework = str(student_conf.get("framework") or "recbole")
@@ -275,7 +275,7 @@ def _search_best_output_path(train_conf: dict, *, dataset: str, model: str) -> P
     teacher_conf = train_conf.get("teacher", {}) or {}
     student_conf = train_conf.get("student", {}) or {}
     path = distilled_student_artifact_path(
-        distiller=str(student_conf.get("model") or "DE"),
+        distiller=str((train_conf.get("distillation", {}) or {}).get("strategy") or "DE"),
         teacher_framework=teacher_conf.get("framework"),
         teacher_model=str(teacher_conf.get("model") or model),
         student_framework=student_conf.get("framework"),
@@ -373,7 +373,7 @@ def _optuna_state_to_str(state: Any) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run Optuna Bayesian optimization for student distillation.")
     parser.add_argument("--config", default=None, help="Single config file")
-    parser.add_argument("--base-config", default=None, help="Base train_student config (YAML or JSON)")
+    parser.add_argument("--base-config", default=None, help="Base distill_student config (YAML or JSON)")
     parser.add_argument("--dataset", default=None, help="Dataset name")
     parser.add_argument("--backbone", default=None, help="Backbone/teacher name (e.g., BPRMF, LGCN, NMF)")
     parser.add_argument("--n-trials", type=int, default=None, help="Number of Optuna trials")
@@ -398,38 +398,38 @@ def main() -> None:
     base_config = load_config(Path(config_path_value))
     train_conf = _normalize_train_conf(base_config)
     optim_conf = train_conf.get("optimization", {}) or {}
-    optuna_conf = (
-        optim_conf.get("optuna")
-        or train_conf.get("optuna")
-        or base_config.get("optuna")
+    bayesian_conf = (
+        optim_conf.get("bayesian")
+        or train_conf.get("bayesian")
+        or base_config.get("bayesian")
         or {}
     )
-    optuna_wandb_conf = optuna_conf.get("wandb", {}) if isinstance(optuna_conf.get("wandb", {}), dict) else {}
+    bayesian_wandb_conf = bayesian_conf.get("wandb", {}) if isinstance(bayesian_conf.get("wandb", {}), dict) else {}
 
     dataset = args.dataset or train_conf.get("dataset")
     backbone = args.backbone or train_conf.get("teacher", {}).get("model") or train_conf.get("student", {}).get("backbone")
-    n_trials = args.n_trials if args.n_trials is not None else optuna_conf.get("n_trials")
-    seed = args.seed if args.seed is not None else int(optuna_conf.get("seed", train_conf.get("runtime", {}).get("seed", 42)))
-    study_name = args.study_name or optuna_conf.get("study_name")
-    storage = args.storage or optuna_conf.get("storage", "sqlite:///optuna_studies.db")
-    metric = args.metric or optuna_conf.get("metric", train_conf.get("evaluation", {}).get("selection_metric", "ndcg"))
-    output_dir_arg = args.output_dir or optuna_conf.get("output_dir")
-    timeout_sec = args.timeout_sec if args.timeout_sec is not None else optuna_conf.get("timeout_sec")
-    rerun_best_on_test = bool(args.rerun_best_on_test or optuna_conf.get("rerun_best_on_test", False))
-    test_seeds_raw = args.test_seeds or optuna_conf.get("test_seeds", "42")
-    search_space = optuna_conf.get("search_space") or _default_search_space()
-    wandb_log = bool(args.wandb_log or optuna_wandb_conf.get("enabled", False))
-    wandb_project = args.wandb_project or optuna_wandb_conf.get("project")
-    wandb_entity = args.wandb_entity or optuna_wandb_conf.get("entity")
-    wandb_group_arg = args.wandb_group or optuna_wandb_conf.get("group")
-    keep_training_wandb = bool(args.keep_training_wandb or optuna_conf.get("keep_training_wandb", False))
+    n_trials = args.n_trials if args.n_trials is not None else bayesian_conf.get("n_trials")
+    seed = args.seed if args.seed is not None else int(bayesian_conf.get("seed", train_conf.get("runtime", {}).get("seed", 42)))
+    study_name = args.study_name or bayesian_conf.get("study_name")
+    storage = args.storage or bayesian_conf.get("storage", "sqlite:///optuna_studies.db")
+    metric = args.metric or bayesian_conf.get("metric", train_conf.get("evaluation", {}).get("selection_metric", "ndcg"))
+    output_dir_arg = args.output_dir or bayesian_conf.get("output_dir")
+    timeout_sec = args.timeout_sec if args.timeout_sec is not None else bayesian_conf.get("timeout_sec")
+    rerun_best_on_test = bool(args.rerun_best_on_test or bayesian_conf.get("rerun_best_on_test", False))
+    test_seeds_raw = args.test_seeds or bayesian_conf.get("test_seeds", "42")
+    search_space = bayesian_conf.get("search_space") or _default_search_space()
+    wandb_log = bool(args.wandb_log or bayesian_wandb_conf.get("enabled", False))
+    wandb_project = args.wandb_project or bayesian_wandb_conf.get("project")
+    wandb_entity = args.wandb_entity or bayesian_wandb_conf.get("entity")
+    wandb_group_arg = args.wandb_group or bayesian_wandb_conf.get("group")
+    keep_training_wandb = bool(args.keep_training_wandb or bayesian_conf.get("keep_training_wandb", False))
 
     if not dataset:
-        raise ValueError("Missing dataset. Set train_student.dataset in config or use --dataset.")
+        raise ValueError("Missing dataset. Set distill_student.dataset in config or use --dataset.")
     if not backbone:
-        raise ValueError("Missing backbone/model. Set train_student.teacher.model or use --backbone.")
+        raise ValueError("Missing backbone/model. Set distill_student.teacher.model or use --backbone.")
     if n_trials is None:
-        raise ValueError("Missing n_trials. Set train_student.optimization.optuna.n_trials or use --n-trials.")
+        raise ValueError("Missing n_trials. Set distill_student.optimization.bayesian.n_trials or use --n-trials.")
     n_trials = int(n_trials)
     if metric not in {"ndcg", "recall"}:
         raise ValueError("metric must be one of: ndcg, recall.")
@@ -439,7 +439,7 @@ def main() -> None:
     if wandb_log and not wandb_project:
         raise ValueError(
             "W&B logging enabled but project missing. "
-            "Set --wandb-project or train_student.optimization.optuna.wandb.project."
+            "Set --wandb-project or distill_student.optimization.bayesian.wandb.project."
         )
 
     set_global_seed(seed)

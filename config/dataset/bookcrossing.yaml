@@ -1,0 +1,7 @@
+# BookCrossing Dataset Configuration
+name: bookcrossing
+train_path: data/bookcrossing/train.tsv
+validation_path: data/bookcrossing/val.tsv
+test_path: data/bookcrossing/test.tsv
+column_names: ['userId', 'itemId', 'rating', 'timestamp']
+kcore: [10, 10]
