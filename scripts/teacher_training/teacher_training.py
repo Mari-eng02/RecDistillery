@@ -76,20 +76,10 @@ if __name__ == "__main__":
             model_name=args.model,
             framework=args.framework,
         )
-        train_config = composed_config["train_teacher"]
         experiment_path = loader.save_generated_experiment(
             kind="teacher",
-            name=(
-                f"{train_config['teacher']['framework']}_"
-                f"{train_config['teacher']['model']}_"
-                f"{train_config['dataset']}_"
-                f"{train_config['teacher']['embedding_dim']}"
-            ),
-            path_parts=[
-                train_config["teacher"]["framework"],
-                train_config["teacher"]["model"],
-                train_config["dataset"],
-            ],
+            name=f"{args.framework}_{args.model}_{args.dataset}",
+            path_parts=[],
             config=composed_config,
         )
         train_args = native_args_from_config_file(

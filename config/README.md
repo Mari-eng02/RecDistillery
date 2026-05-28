@@ -5,7 +5,6 @@ Complete experiment files can be composed from reusable modules, then stored und
 
 For the canonical shape and editing rules, see:
 
-- `SCHEMA.md`
 - `AGENT_GUIDE.md`
 
 Experiment configs use explicit roots:
@@ -108,7 +107,16 @@ python scripts/recdistill/train_student_from_config.py `
 ```
 
 If `--config` is omitted, scripts compose a config from modules and save the
-result under `config/experiments/<teacher|student|recdistill>/`.
+result under `config/experiments/<teacher|student|recdistill>/` with an
+experiment ID appended to the filename.
+
+Generated run outputs are saved under:
+
+```text
+results/<teacher|student|recdistill>/<timestamp>_<experiment_id>/
+```
+
+Each run directory contains `artifacts/`, `config/`, `logs/`, and `perf/`.
 
 ## Python Usage
 

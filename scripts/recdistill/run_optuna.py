@@ -29,7 +29,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from scripts.recdistill.train_student_from_config import build_command
 from recdistill.config_integration import normalize_recdistill_config
-from recdistill.paths import DISTILLED_STUDENT_EXT, distilled_student_artifact_path
+from recdistill.paths import DISTILLED_STUDENT_EXT, experiment_id_from_config_path, experiment_run_dir
 
 try:
     import yaml
@@ -64,7 +64,11 @@ def load_config(config_path: Path) -> dict:
         data = yaml.safe_load(raw_text) or {}
     if isinstance(data, dict) and "preset" in data and "config" in data:
         data = data["config"]
-    return normalize_recdistill_config(data)
+    config = normalize_recdistill_config(data)
+    config.setdefault("experiment", {})
+    if isinstance(config["experiment"], dict):
+        config["experiment"].setdefault("id", experiment_id_from_config_path(config_path))
+    return config
 
 
 def _normalize_train_conf(config: dict) -> dict:
@@ -195,7 +199,8 @@ def _prepare_trial_config(
 
 
 def _collect_trial_result(output_path: Path, metric: str) -> dict[str, Any]:
-    history_path = output_path.with_suffix(".history.json")
+    run_dir = output_path.parent.parent if output_path.parent.name == "artifacts" else output_path.parent
+    history_path = run_dir / "logs" / f"{output_path.stem}.history.json"
     ckpt = _read_checkpoint_summary(output_path)
     best_epoch = ckpt.get("best_epoch")
     best_row = _read_history_row_by_epoch(history_path, int(best_epoch)) if best_epoch else {}
@@ -249,22 +254,8 @@ def _experiment_tuple(train_conf: dict, *, dataset: str, model: str) -> tuple[st
 
 
 def _default_bayesian_dir(train_conf: dict, *, dataset: str, model: str) -> Path:
-    distiller, teacher_framework, teacher_name, student_framework, student_name, dataset_name = _experiment_tuple(
-        train_conf,
-        dataset=dataset,
-        model=model,
-    )
-    return (
-        Path("results")
-        / "recdistill"
-        / distiller
-        / teacher_framework
-        / teacher_name
-        / student_framework
-        / student_name
-        / dataset_name
-        / "bayesian"
-    )
+    del train_conf, dataset, model
+    return experiment_run_dir("recdistill", "bayesian")
 
 
 def _search_best_output_path(train_conf: dict, *, dataset: str, model: str) -> Path:
@@ -272,25 +263,8 @@ def _search_best_output_path(train_conf: dict, *, dataset: str, model: str) -> P
     if runtime_conf.get("output_path"):
         return Path(runtime_conf["output_path"])
 
-    teacher_conf = train_conf.get("teacher", {}) or {}
-    student_conf = train_conf.get("student", {}) or {}
-    path = distilled_student_artifact_path(
-        distiller=str((train_conf.get("distillation", {}) or {}).get("strategy") or "DE"),
-        teacher_framework=teacher_conf.get("framework"),
-        teacher_model=str(teacher_conf.get("model") or model),
-        student_framework=student_conf.get("framework"),
-        student_model=str(student_conf.get("backbone") or model),
-        dataset=str(dataset),
-        embedding_dim=int(student_conf.get("embedding_dim", 0)),
-        strategy="best",
-    )
-    try:
-        path = path.relative_to(REPO_ROOT)
-    except ValueError:
-        pass
-    if not path.stem.endswith("_best"):
-        path = path.with_name(f"{path.stem}_best{path.suffix}")
-    return path
+    experiment_id = str(train_conf.get("experiment_id") or "best")
+    return experiment_run_dir("recdistill", experiment_id) / "artifacts" / f"{experiment_id}_best{DISTILLED_STUDENT_EXT}"
 
 
 def _copy_artifact_with_history(source_path: Path, destination_path: Path) -> None:
@@ -298,8 +272,14 @@ def _copy_artifact_with_history(source_path: Path, destination_path: Path) -> No
     destination_path.parent.parent.joinpath("perf").mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_path, destination_path)
     source_history = source_path.with_suffix(".history.json")
+    if source_path.parent.name == "artifacts":
+        source_history = source_path.parent.parent / "logs" / f"{source_path.stem}.history.json"
     if source_history.exists():
-        shutil.copy2(source_history, destination_path.with_suffix(".history.json"))
+        history_dest = destination_path.with_suffix(".history.json")
+        if destination_path.parent.name == "artifacts":
+            history_dest = destination_path.parent.parent / "logs" / f"{destination_path.stem}.history.json"
+            history_dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_history, history_dest)
 
 
 def _default_search_space() -> dict[str, Any]:
@@ -444,14 +424,17 @@ def main() -> None:
 
     set_global_seed(seed)
 
-    output_dir = Path(output_dir_arg) if output_dir_arg else _default_bayesian_dir(
-        train_conf,
-        dataset=str(dataset),
-        model=str(backbone),
-    )
+    experiment_id = str((base_config.get("experiment", {}) or {}).get("id") or "bayesian")
+    train_conf["experiment_id"] = experiment_id
+    output_dir = Path(output_dir_arg) if output_dir_arg else experiment_run_dir("recdistill", experiment_id)
     output_dir.mkdir(parents=True, exist_ok=True)
-    wei_dir = output_dir / "wei"
+    wei_dir = output_dir / "artifacts"
     wei_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "logs").mkdir(parents=True, exist_ok=True)
+    (output_dir / "config").mkdir(parents=True, exist_ok=True)
+    config_source = Path(config_path_value)
+    if config_source.exists():
+        (output_dir / "config" / config_source.name).write_text(config_source.read_text(encoding="utf-8"), encoding="utf-8")
     (output_dir / "perf").mkdir(parents=True, exist_ok=True)
 
     try:
@@ -580,12 +563,13 @@ def main() -> None:
         trial_rows,
         key=lambda row: (0 if row["state"] == "COMPLETE" else 1, -(row["value"] if row["value"] is not None else float("-inf"))),
     )
-    (output_dir / "optuna_trials.json").write_text(json.dumps(trial_rows_sorted, indent=2), encoding="utf-8")
-    _write_records_tsv(trial_rows_sorted, output_dir / "optuna_trials.tsv")
+    logs_dir = output_dir / "logs"
+    (logs_dir / "optuna_trials.json").write_text(json.dumps(trial_rows_sorted, indent=2), encoding="utf-8")
+    _write_records_tsv(trial_rows_sorted, logs_dir / "optuna_trials.tsv")
 
     if trial_records:
-        (output_dir / "optuna_runtime_records.json").write_text(json.dumps(trial_records, indent=2), encoding="utf-8")
-        _write_records_tsv(trial_records, output_dir / "optuna_runtime_records.tsv")
+        (logs_dir / "optuna_runtime_records.json").write_text(json.dumps(trial_records, indent=2), encoding="utf-8")
+        _write_records_tsv(trial_records, logs_dir / "optuna_runtime_records.tsv")
 
     if not study.best_trials:
         raise RuntimeError("No successful trial found in this Optuna study.")
@@ -608,7 +592,7 @@ def main() -> None:
         best_summary["best_artifact_path"] = str(best_output_path)
         best_summary["source_trial_artifact_path"] = str(best_trial_output_path)
         print(f"Promoted best Optuna artifact: {best_output_path}")
-    (output_dir / "best_trial.json").write_text(json.dumps(best_summary, indent=2), encoding="utf-8")
+    (logs_dir / "best_trial.json").write_text(json.dumps(best_summary, indent=2), encoding="utf-8")
 
     print("\nBest trial summary")
     print(f"- dataset: {dataset}")
@@ -626,9 +610,10 @@ def main() -> None:
     rerun_records: list[dict[str, Any]] = []
     for test_seed in test_seeds:
         rerun_dir = output_dir / "best_rerun"
-        (rerun_dir / "wei").mkdir(parents=True, exist_ok=True)
+        (rerun_dir / "artifacts").mkdir(parents=True, exist_ok=True)
+        (rerun_dir / "logs").mkdir(parents=True, exist_ok=True)
         (rerun_dir / "perf").mkdir(parents=True, exist_ok=True)
-        run_output_path = rerun_dir / "wei" / f"seed_{test_seed}{DISTILLED_STUDENT_EXT}"
+        run_output_path = rerun_dir / "artifacts" / f"seed_{test_seed}{DISTILLED_STUDENT_EXT}"
         trial_config = _prepare_trial_config(
             base_config=base_config,
             dataset=dataset,
@@ -645,7 +630,8 @@ def main() -> None:
 
         ckpt = _read_checkpoint_summary(run_output_path)
         best_epoch = int(ckpt.get("best_epoch") or 0)
-        best_row = _read_history_row_by_epoch(run_output_path.with_suffix(".history.json"), best_epoch) if best_epoch > 0 else {}
+        run_history_path = run_output_path.parent.parent / "logs" / f"{run_output_path.stem}.history.json"
+        best_row = _read_history_row_by_epoch(run_history_path, best_epoch) if best_epoch > 0 else {}
         rerun_records.append(
             {
                 "seed": int(test_seed),
@@ -662,10 +648,10 @@ def main() -> None:
         )
 
     rerun_dir = output_dir / "best_rerun"
-    rerun_dir.mkdir(parents=True, exist_ok=True)
-    (rerun_dir / "best_rerun_results.json").write_text(json.dumps(rerun_records, indent=2), encoding="utf-8")
-    _write_records_tsv(rerun_records, rerun_dir / "best_rerun_results.tsv")
-    print(f"\nSaved best-config test rerun results: {rerun_dir / 'best_rerun_results.tsv'}")
+    (rerun_dir / "logs").mkdir(parents=True, exist_ok=True)
+    (rerun_dir / "logs" / "best_rerun_results.json").write_text(json.dumps(rerun_records, indent=2), encoding="utf-8")
+    _write_records_tsv(rerun_records, rerun_dir / "logs" / "best_rerun_results.tsv")
+    print(f"\nSaved best-config test rerun results: {rerun_dir / 'logs' / 'best_rerun_results.tsv'}")
 
 
 if __name__ == "__main__":

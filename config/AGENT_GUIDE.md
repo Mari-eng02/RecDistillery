@@ -3,6 +3,66 @@
 This guide defines operational rules for agents editing or generating
 RecDistillery configs.
 
+## Executable Templates
+
+The canonical templates live in `config/composites/`:
+
+- `teacher_template.yaml`
+- `student_template.yaml`
+- `recdistill_template.yaml`
+
+Use these files as the executable source of truth for the base shape. This
+guide describes how to read, fill, and edit that shape.
+
+## Shape Summary
+
+```text
+train_teacher
+|-- dataset
+|-- teacher
+|   `-- default
+|-- optimization
+|   `-- default
+|-- runtime
+|   `-- default
+`-- evaluation
+    `-- default
+```
+
+```text
+train_student
+|-- dataset
+|-- student
+|   `-- default
+|-- optimization
+|   `-- default
+|-- runtime
+|   `-- default
+`-- evaluation
+    `-- default
+```
+
+```text
+distill_student
+|-- dataset
+|-- teacher
+|   `-- default
+|-- student
+|   `-- default
+|-- distillation
+|   |-- default
+|   `-- strategy
+|-- optimization
+|   `-- default
+|-- runtime
+|   `-- default
+`-- evaluation
+    `-- default
+```
+
+Every mapping may also contain override fields next to `default`. For example,
+`optimization.batch_size`, `runtime.num_workers`, or `student.embedding_dim`.
+
 ## Primary Rule
 
 Prefer composition over duplication.
@@ -28,14 +88,16 @@ Never generate rootless experiment configs.
 
 ## Field Ownership
 
-- Dataset paths and parsing options belong in `config/dataset/`.
-- Teacher model architecture belongs in `config/teacher/<framework>/<model>.yaml`.
-- Student model architecture belongs in `config/student/<framework>/<model>.yaml`.
-- Generic training parameters belong in `config/optimization/`.
-- Distiller-specific parameters belong in `config/distillation/<strategy>.yaml`.
-- Runtime parameters belong in `config/runtime/`.
-- Evaluation parameters belong in `config/evaluation/`.
-- Experiment-specific overrides belong in `config/experiments/`.
+| Field family | Location | Notes |
+|---|---|---|
+| Dataset paths and parsing | `config/dataset/` | Dataset files define data locations and parsing options. |
+| Teacher architecture | `config/teacher/<framework>/<model>.yaml` | Teacher modules use `model`. |
+| Student architecture | `config/student/<framework>/<model>.yaml` | Student modules use `backbone`. |
+| Distiller parameters | `config/distillation/<strategy>.yaml` | Includes lambdas, temperatures, RRD, UnKD, topology options. |
+| Generic optimization | `config/optimization/` | Includes epochs, batch size, learning rate, L2 regularization, Bayesian settings. |
+| Runtime behavior | `config/runtime/` | Includes seed, device, workers, output strategy, logging args. |
+| Evaluation behavior | `config/evaluation/` | Includes cutoffs, metrics, evaluation frequency, selection policy. |
+| Experiment overrides | `config/experiments/` | Use sparingly for run-specific deviations from defaults. |
 
 ## Module Paths
 
@@ -55,23 +117,48 @@ Use forward slashes in YAML paths.
 Teacher experiment files:
 
 ```text
-config/experiments/teacher/<framework>_<model>_<dataset>.yaml
+config/experiments/teacher/<framework>_<model>_<dataset>_<experiment_id>.yaml
 ```
 
 Student experiment files:
 
 ```text
-config/experiments/student/<framework>_<backbone>_<dataset>.yaml
+config/experiments/student/<framework>_<backbone>_<dataset>_<experiment_id>.yaml
 ```
 
 RecDistill experiment files:
 
 ```text
-config/experiments/recdistill/<distiller>_<teacher_framework>_<teacher_model>_to_<student_framework>_<student_backbone>_<dataset>.yaml
+config/experiments/recdistill/<distiller>_<teacher_framework>_<teacher_model>_to_<student_framework>_<student_backbone>_<dataset>_<experiment_id>.yaml
 ```
 
-Shorter names are acceptable only when the experiment directory contains a
-single unambiguous setup for that distiller and dataset.
+Generated configs should be saved directly under `config/experiments/teacher/`,
+`config/experiments/student/`, or `config/experiments/recdistill/`, without
+additional nested directories.
+
+## Results Layout
+
+Results use only these top-level kind directories:
+
+```text
+results/
+|-- teacher/
+|-- student/
+`-- recdistill/
+```
+
+Each experiment run is stored as:
+
+```text
+results/<kind>/<timestamp>_<experiment_id>/
+|-- artifacts/
+|-- config/
+|-- logs/
+`-- perf/
+```
+
+The `experiment_id` must match the ID in the generated config filename and the
+top-level `experiment.id` field when present.
 
 ## Teacher Rules
 
@@ -129,7 +216,6 @@ distillation:
 
 Do not infer the distiller from `student.model`.
 
-Do not combine `HTD` and `FTD` in the same strategy.
 
 ## Search Rules
 

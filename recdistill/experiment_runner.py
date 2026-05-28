@@ -35,8 +35,10 @@ class RecDistillExperimentRunner:
             resolve_student_checkpoint_from_args(args, distiller_name=self.resolve_distiller_name())
         )
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
-        strategy_dir = self.output_path.parent.parent if self.output_path.parent.name == "wei" else self.output_path.parent
-        (strategy_dir / "perf").mkdir(parents=True, exist_ok=True)
+        self.run_dir = self.output_path.parent.parent if self.output_path.parent.name == "artifacts" else self.output_path.parent
+        (self.run_dir / "perf").mkdir(parents=True, exist_ok=True)
+        (self.run_dir / "logs").mkdir(parents=True, exist_ok=True)
+        (self.run_dir / "config").mkdir(parents=True, exist_ok=True)
 
         self.teacher_state = None
         self.dataset = None
@@ -369,7 +371,7 @@ class RecDistillExperimentRunner:
                 f"| leaks={final_test_eval['leaked_users_test']}"
             )
 
-        history_path = self.output_path.with_suffix(".history.json")
+        history_path = self.run_dir / "logs" / f"{self.output_path.stem}.history.json"
         should_save_final = caught_exception is None and (
             not saved_best_checkpoint or (args.early_stop and args.early_stop_restore_best and early_best_epoch > 0)
         )

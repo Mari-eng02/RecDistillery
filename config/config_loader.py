@@ -9,7 +9,7 @@ import copy
 import yaml
 from pydantic import ValidationError
 
-from recdistill.paths import distilled_student_artifact_path
+from recdistill.paths import new_experiment_id
 
 from config.schemas import (
     ConfigPreset,
@@ -255,10 +255,17 @@ class ConfigLoader:
         name: str,
         config: Dict[str, Any],
         path_parts: list[str],
+        experiment_id: str | None = None,
     ) -> Path:
         """Persist an on-the-fly composed config as an experiment file."""
-        safe_parts = [_slug(part) for part in path_parts if str(part).strip()]
-        experiment_path = self.root / "experiments" / kind / Path(*safe_parts) / f"{_slug(name)}.yaml"
+        del path_parts
+        experiment_id = experiment_id or new_experiment_id()
+        config.setdefault("experiment", {})
+        if isinstance(config["experiment"], dict):
+            config["experiment"].setdefault("id", experiment_id)
+            config["experiment"].setdefault("name", _slug(name))
+            config["experiment"].setdefault("kind", _slug(kind))
+        experiment_path = self.root / "experiments" / _slug(kind) / f"{_slug(name)}_{experiment_id}.yaml"
         experiment_path.parent.mkdir(parents=True, exist_ok=True)
         with experiment_path.open("w", encoding="utf-8") as fp:
             yaml.safe_dump(config, fp, sort_keys=False, allow_unicode=False)
@@ -334,20 +341,6 @@ class ConfigLoader:
             "strategy": str(distiller_strategy).replace("-", "_").upper(),
         }
 
-        runtime = train.setdefault("runtime", {})
-        runtime["output_path"] = str(
-            distilled_student_artifact_path(
-                distiller=distiller_strategy,
-                teacher_framework=teacher_cfg.framework,
-                teacher_model=teacher_cfg.model,
-                student_framework=student_cfg.framework,
-                student_model=student_cfg.backbone,
-                dataset=dataset_name,
-                embedding_dim=student_cfg.embedding_dim,
-                strategy="fixed",
-            ).relative_to(Path(__file__).resolve().parents[1])
-        ).replace("\\", "/")
-        
         return template
 
     @staticmethod

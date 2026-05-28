@@ -18,6 +18,7 @@ from recdistill.native_runner import (
     native_args_from_config_file,
 )
 from recdistill.paths import AMAZONCD, BOOKCROSSING, BPRMF, CITEULIKE, LGCN, NMF
+from recdistill.paths import DISTILLED_STUDENT_EXT, experiment_artifact_path, experiment_id_from_config_path
 from recdistill.model_validation import validate_distillation_request, validate_trainable_model
 from recdistill.training import set_seed
 
@@ -98,20 +99,10 @@ if __name__ == "__main__":
                 model_name=args.backbone,
                 framework=args.framework,
             )
-            train_config = composed_config["train_student"]
             experiment_path = loader.save_generated_experiment(
                 kind="student",
-                name=(
-                    f"{train_config['student']['framework']}_"
-                    f"{train_config['student']['backbone']}_"
-                    f"{train_config['dataset']}_"
-                    f"{train_config['student']['embedding_dim']}"
-                ),
-                path_parts=[
-                    train_config["student"]["framework"],
-                    train_config["student"]["backbone"],
-                    train_config["dataset"],
-                ],
+                name=f"{args.framework}_{args.backbone}_{args.dataset}",
+                path_parts=[],
                 config=composed_config,
             )
             train_args = native_args_from_config_file(
@@ -125,6 +116,7 @@ if __name__ == "__main__":
         NativeModelTrainingRunner(train_args).run()
     else:
         if args.config:
+            experiment_path = Path(args.config)
             config = load_recdistill_config_from_file(args.config)
             try:
                 validate_distillation_request(
@@ -137,6 +129,15 @@ if __name__ == "__main__":
                 )
             except ValueError as exc:
                 parser.error(str(exc))
+            if not config.distill_student.runtime.output_path:
+                experiment_id = experiment_id_from_config_path(experiment_path)
+                config.distill_student.runtime.output_path = str(
+                    experiment_artifact_path(
+                        kind="recdistill",
+                        experiment_id=experiment_id,
+                        filename=f"{experiment_id}{DISTILLED_STUDENT_EXT}",
+                    )
+                )
         else:
             try:
                 teacher_model = args.teacher_model or args.backbone
@@ -159,16 +160,30 @@ if __name__ == "__main__":
             )
             experiment_path = get_config_loader().save_generated_experiment(
                 kind="recdistill",
-                name=f"{distillation}_{args.teacher_framework}_{args.teacher_model or args.backbone}_{args.framework}_{args.backbone}_{args.dataset}",
-                path_parts=[distillation, args.teacher_framework, args.teacher_model or args.backbone, args.framework, args.backbone, args.dataset],
+                name=f"{distillation}_{args.teacher_framework}_{args.teacher_model or args.backbone}_to_{args.framework}_{args.backbone}_{args.dataset}",
+                path_parts=[],
                 config=recdistill_config_to_dict(config),
             )
             print(f"Generated RecDistill config saved to: {experiment_path}")
+            config = load_recdistill_config_from_file(experiment_path)
+            experiment_id = experiment_id_from_config_path(experiment_path)
+            config.distill_student.runtime.output_path = str(
+                experiment_artifact_path(
+                    kind="recdistill",
+                    experiment_id=experiment_id,
+                    filename=f"{experiment_id}{DISTILLED_STUDENT_EXT}",
+                )
+            )
         if args.output_path is not None:
             config.distill_student.runtime.output_path = args.output_path
         if args.framework is not None:
             config.distill_student.student.framework = args.framework
         if args.skip_eval:
             config.distill_student.evaluation.enabled = False
+        if "experiment_path" in locals() and config.distill_student.runtime.output_path:
+            output_path = Path(config.distill_student.runtime.output_path)
+            run_dir = output_path.parent.parent if output_path.parent.name == "artifacts" else output_path.parent
+            (run_dir / "config").mkdir(parents=True, exist_ok=True)
+            (run_dir / "config" / Path(experiment_path).name).write_text(Path(experiment_path).read_text(encoding="utf-8"), encoding="utf-8")
         set_seed(int(config.distill_student.runtime.seed))
         RecDistillExperimentRunner.from_config(config).run()

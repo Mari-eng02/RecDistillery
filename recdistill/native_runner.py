@@ -12,7 +12,13 @@ from recdistill.checkpointing import save_student_checkpoint
 from recdistill.data.datarec_loader import load_eval_split, load_interaction_dataset
 from recdistill.evaluation import evaluate_student
 from recdistill.factories import build_student_model, normalize_backbone_name, parse_mlp_dims
-from recdistill.paths import STUDENT_EXT, TEACHER_EXT, student_artifact_path, teacher_artifact_path
+from recdistill.paths import (
+    STUDENT_EXT,
+    TEACHER_EXT,
+    experiment_artifact_path,
+    experiment_id_from_config_path,
+    new_experiment_id,
+)
 from recdistill.teachers.serialization import save_teacher_state
 from recdistill.teachers.state import PrecomputedScoresScorer, TeacherState
 from recdistill.tracking import utc_now_iso
@@ -47,6 +53,7 @@ class NativeTrainingArgs:
     selection_split: str = "val"
     selection_metric: str = "ndcg"
     assert_no_train_leak: bool = True
+    config_path: str | None = None
 
 
 def native_args_from_model_config(
@@ -147,6 +154,8 @@ def native_args_from_config_file(
 
     config = raw.get("config", raw) if isinstance(raw, dict) else {}
     config = get_config_loader().resolve_config_modules(config)
+    experiment_meta = config.get("experiment", {}) if isinstance(config.get("experiment", {}), dict) else {}
+    experiment_id = str(experiment_meta.get("id") or experiment_id_from_config_path(config_path))
     if not isinstance(config, dict):
         train = {}
     elif _normalize_role(role) == "teacher":
@@ -190,6 +199,15 @@ def native_args_from_config_file(
         "64,32,16,8",
     )
 
+    configured_output_path = runtime_conf.get("output_path")
+    if configured_output_path is None:
+        ext = TEACHER_EXT if _normalize_role(role) == "teacher" else STUDENT_EXT
+        configured_output_path = experiment_artifact_path(
+            kind=role,
+            experiment_id=experiment_id,
+            filename=f"{experiment_id}{ext}",
+        )
+
     args = NativeTrainingArgs(
         role=role,
         dataset=str(dataset),
@@ -206,7 +224,7 @@ def native_args_from_config_file(
         seed=int(runtime_conf.get("seed", 42)),
         device=runtime_conf.get("device"),
         num_workers=int(runtime_conf.get("num_workers", 0)),
-        output_path=runtime_conf.get("output_path"),
+        output_path=str(configured_output_path),
         save_every=int(runtime_conf.get("save_every", 0)),
         skip_eval=not bool(eval_conf.get("enabled", True)),
         eval_k=int(eval_conf.get("k", 20)),
@@ -216,6 +234,7 @@ def native_args_from_config_file(
         selection_split=str(eval_conf.get("selection_split", "val")),
         selection_metric=str(eval_conf.get("selection_metric", "ndcg")),
         assert_no_train_leak=bool(eval_conf.get("assert_no_train_leak", True)),
+        config_path=str(config_path),
     )
     if overrides:
         for key, value in overrides.items():
@@ -232,6 +251,13 @@ class NativeModelTrainingRunner:
         self.backbone = normalize_backbone_name(args.backbone)
         self.output_path = Path(args.output_path) if args.output_path else self._default_output_path()
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
+        self.run_dir = self.output_path.parent.parent if self.output_path.parent.name == "artifacts" else self.output_path.parent
+        (self.run_dir / "logs").mkdir(parents=True, exist_ok=True)
+        (self.run_dir / "config").mkdir(parents=True, exist_ok=True)
+        if args.config_path:
+            source = Path(args.config_path)
+            if source.exists():
+                (self.run_dir / "config" / source.name).write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
 
         self.dataset = None
         self.val_dict: dict[int, set[int]] = {}
@@ -366,7 +392,7 @@ class NativeModelTrainingRunner:
         final_epoch = int(history[-1]["epoch"]) if history else 0
         if not saved_best_artifact:
             self._save_artifact(self.output_path, final_epoch, history, best_epoch, best_score if best_epoch > 0 else None)
-        history_path = self.output_path.with_suffix(".history.json")
+        history_path = self.run_dir / "logs" / f"{self.output_path.stem}.history.json"
         history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
 
         result = {
@@ -456,18 +482,12 @@ class NativeModelTrainingRunner:
         return PrecomputedScoresScorer(scores=torch.cat(rows, dim=0))
 
     def _default_output_path(self) -> Path:
-        if self.role == "teacher":
-            return teacher_artifact_path(
-                framework=self.args.framework,
-                model=self.backbone,
-                dataset=self.args.dataset,
-                embedding_dim=int(self.args.embedding_dim),
-            )
-        return student_artifact_path(
-            framework=self.args.framework,
-            model=self.backbone,
-            dataset=self.args.dataset,
-            embedding_dim=int(self.args.embedding_dim),
+        experiment_id = new_experiment_id()
+        ext = TEACHER_EXT if self.role == "teacher" else STUDENT_EXT
+        return experiment_artifact_path(
+            kind=self.role,
+            experiment_id=experiment_id,
+            filename=f"{experiment_id}{ext}",
         )
 
     def _update_eval_row(self, row: dict[str, Any], current_eval: dict[str, Any]) -> None:

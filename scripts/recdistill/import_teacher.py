@@ -19,7 +19,7 @@ from recdistill.paths import REPO_ROOT, imported_teacher_artifact_path
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Import a supported teacher artifact into .teacher format.")
     parser.add_argument("--input", default=None, help="Input teacher artifact")
-    parser.add_argument("--output", default=None, help="Optional explicit output .teacher path; must follow the results/teachers canonical layout")
+    parser.add_argument("--output", default=None, help="Optional explicit output .teacher path; must follow the results/teacher canonical layout")
     parser.add_argument("--framework", default="auto", help="Source framework or adapter family")
     parser.add_argument("--format", default="auto", help="Source artifact format")
     parser.add_argument("--model-name", default=None, help="Teacher model name used in metadata and canonical output path")
@@ -83,7 +83,7 @@ def _resolve_output_path(args: argparse.Namespace, *, framework: str, model_name
     canonical = canonical.resolve()
     if output_path != canonical:
         raise ValueError(
-            "--output must follow the canonical results/teachers layout exactly. "
+            "--output must follow the canonical results/teacher layout exactly. "
             f"Expected: {canonical}"
         )
     return output_path

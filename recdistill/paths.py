@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from datetime import datetime
+import uuid
 
 from recdistill.registry import canonical_model_name, distiller_slug, model_slug
 
@@ -43,6 +45,43 @@ class PathManager:
 
 def _create_directory(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
+
+
+def new_experiment_id() -> str:
+    return uuid.uuid4().hex[:8]
+
+
+def timestamp_slug() -> str:
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def experiment_run_dir(kind: str, experiment_id: str, *, timestamp: str | None = None) -> Path:
+    kind_slug = str(kind).strip().lower()
+    if kind_slug in {"teachers", "train_teacher"}:
+        kind_slug = "teacher"
+    elif kind_slug in {"students", "train_student"}:
+        kind_slug = "student"
+    elif kind_slug in {"distill_student", "distillation"}:
+        kind_slug = "recdistill"
+    stamp = timestamp or timestamp_slug()
+    return RESULTS_ROOT / kind_slug / f"{stamp}_{experiment_id}"
+
+
+def experiment_artifact_path(
+    *,
+    kind: str,
+    experiment_id: str,
+    filename: str,
+    timestamp: str | None = None,
+) -> Path:
+    return experiment_run_dir(kind, experiment_id, timestamp=timestamp) / "artifacts" / filename
+
+
+def experiment_id_from_config_path(path: str | Path) -> str:
+    stem = Path(path).stem
+    tail = stem.rsplit("_", 1)[-1]
+    is_short_hex = 6 <= len(tail) <= 16 and all(ch in "0123456789abcdefABCDEF" for ch in tail)
+    return tail if is_short_hex else stem
 
 
 def dataset_directory(dataset_name: str, create_if_not_exists: bool = True) -> str:
@@ -102,8 +141,9 @@ def teacher_artifact_path(
     framework_slug = _framework_slug(framework)
     model_name = _model_label(model)
     dataset_slug = _dataset_slug(dataset)
+    experiment_id = f"{framework_slug}_{model_name.lower()}_{dataset_slug}_{int(embedding_dim)}"
     file_name = f"{framework_slug}_{model_name}_{dataset_slug}_{int(embedding_dim)}{TEACHER_EXT}"
-    return RESULTS_ROOT / "teachers" / framework_slug / model_name / dataset_slug / str(strategy).strip().lower() / "wei" / file_name
+    return experiment_artifact_path(kind="teacher", experiment_id=experiment_id, filename=file_name)
 
 
 def imported_teacher_artifact_path(
@@ -116,8 +156,9 @@ def imported_teacher_artifact_path(
     framework_slug = _framework_slug(framework)
     model_name = _model_label(model)
     dataset_slug = _dataset_slug(dataset)
+    experiment_id = f"imported_{framework_slug}_{model_name.lower()}_{dataset_slug}_{int(embedding_dim)}"
     file_name = f"{framework_slug}_{model_name}_{dataset_slug}_{int(embedding_dim)}{TEACHER_EXT}"
-    return RESULTS_ROOT / "teachers" / framework_slug / model_name / dataset_slug / "imported" / file_name
+    return experiment_artifact_path(kind="teacher", experiment_id=experiment_id, filename=file_name)
 
 
 def student_artifact_path(
@@ -131,8 +172,9 @@ def student_artifact_path(
     framework_slug = _framework_slug(framework)
     model_name = _model_label(model)
     dataset_slug = _dataset_slug(dataset)
+    experiment_id = f"{framework_slug}_{model_name.lower()}_{dataset_slug}_{int(embedding_dim)}"
     file_name = f"{framework_slug}_{model_name}_{dataset_slug}_{int(embedding_dim)}{STUDENT_EXT}"
-    return RESULTS_ROOT / "students" / framework_slug / model_name / dataset_slug / str(strategy).strip().lower() / "wei" / file_name
+    return experiment_artifact_path(kind="student", experiment_id=experiment_id, filename=file_name)
 
 
 def distilled_student_artifact_path(
@@ -152,24 +194,16 @@ def distilled_student_artifact_path(
     teacher_model_name = _model_label(teacher_model)
     student_model_name = _model_label(student_model)
     dataset_slug = _dataset_slug(dataset)
+    experiment_id = (
+        f"{distiller_name}_{teacher_framework_slug}_{teacher_model_name.lower()}_"
+        f"to_{student_framework_slug}_{student_model_name.lower()}_{dataset_slug}"
+    )
     file_name = (
         f"{teacher_framework_slug}_{teacher_model_name}_"
         f"{student_framework_slug}_{student_model_name}_"
         f"{dataset_slug}_{int(embedding_dim)}{DISTILLED_STUDENT_EXT}"
     )
-    return (
-        RESULTS_ROOT
-        / "recdistill"
-        / distiller_name
-        / teacher_framework_slug
-        / teacher_model_name
-        / student_framework_slug
-        / student_model_name
-        / dataset_slug
-        / str(strategy).strip().lower()
-        / "wei"
-        / file_name
-    )
+    return experiment_artifact_path(kind="recdistill", experiment_id=experiment_id, filename=file_name)
 
 
 def resolve_teacher_checkpoint(
