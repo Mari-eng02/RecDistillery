@@ -1,32 +1,27 @@
 experiment:
-  id: 004
+  id: '004'
   name: unkd_citeulike
   kind: recdistill
-
 distill_student:
   dataset: citeulike
-  
   teacher:
     default: teacher/elliot/nmf.yaml
     path: null
-
   student:
     default: student/recbole/line.yaml
-  
   optimization:
     default: optimization/default.yaml
     batch_size: 4096
-  
+    bayesian:
+      enabled: true
+    early_stopping:
+      enabled: true
   distillation:
     strategy: UnKD
     default: distillation/unkd.yaml
-  
   runtime:
     default: runtime/default.yaml
     num_workers: 4
-  
   evaluation:
     default: evaluation/default.yaml
     batch_size: 1024
-  
- 

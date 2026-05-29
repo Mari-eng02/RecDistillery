@@ -135,10 +135,12 @@ def normalize_recdistill_config(config: Dict[str, Any]) -> Dict[str, Any]:
         if key in student_conf and key not in distill_conf:
             distill_conf[key] = student_conf[key]
 
-    train_conf.setdefault("optimization", {})
+    optimization_conf = train_conf.setdefault("optimization", {})
+    if "early_stopping" in train_conf:
+        raise ValueError("Use distill_student.optimization.early_stopping, not distill_student.early_stopping.")
+    optimization_conf.setdefault("early_stopping", {})
     train_conf.setdefault("runtime", {})
     train_conf.setdefault("evaluation", {})
-    train_conf.setdefault("early_stopping", {})
     return normalized
 
 
@@ -230,30 +232,6 @@ def get_default_dataset_path(dataset_name: str, file_type: str = 'train') -> str
         raise ValueError(f"Unknown file_type: {file_type}")
 
 
-def get_teacher_checkpoint_path(
-    dataset_name: str,
-    model_name: str,
-    checkpoint_dir: str = "results/teacher_models"
-) -> Path:
-    """
-    Get expected path for teacher model checkpoint.
-    
-    Args:
-        dataset_name: Dataset name
-        model_name: Model name (bprmf, nmf, lgcn)
-        checkpoint_dir: Base directory for checkpoints
-        
-    Returns:
-        Path to teacher checkpoint
-        
-    Example:
-        >>> path = get_teacher_checkpoint_path('citeulike', 'nmf')
-        >>> print(path)
-        results/teacher_models/citeulike/nmf_best.pt
-    """
-    return Path(checkpoint_dir) / dataset_name / f"{model_name}_best.pt"
-
-
 def print_config_summary(config: RecDistillConfig) -> None:
     """
     Print a summary of RecDistill configuration.
@@ -293,7 +271,6 @@ def print_config_summary(config: RecDistillConfig) -> None:
     print(f"  Batch Size: {train_cfg.optimization.batch_size}")
     print(f"  Learning Rate: {train_cfg.optimization.learning_rate}")
     print(f"  L2 Reg: {train_cfg.optimization.l2_reg}")
-    print(f"  Validation Rate: {train_cfg.optimization.validation_rate}")
     
     print("\n🏃 RUNTIME")
     print(f"  Seed: {train_cfg.runtime.seed}")
@@ -310,11 +287,12 @@ def print_config_summary(config: RecDistillConfig) -> None:
     print(f"  Selection Metric: {train_cfg.evaluation.selection_metric}")
     
     print("\n⏸️  EARLY STOPPING")
-    if train_cfg.early_stopping:
-        print(f"  Enabled: {train_cfg.early_stopping.enabled}")
-        print(f"  Metric: {train_cfg.early_stopping.metric}")
-        print(f"  Patience: {train_cfg.early_stopping.patience}")
-        print(f"  Min Delta: {train_cfg.early_stopping.min_delta}")
+    early_stopping = train_cfg.optimization.early_stopping
+    if early_stopping:
+        print(f"  Enabled: {early_stopping.enabled}")
+        print(f"  Metric: {early_stopping.metric}")
+        print(f"  Patience: {early_stopping.patience}")
+        print(f"  Min Delta: {early_stopping.min_delta}")
     else:
         print(f"  Disabled")
     
@@ -341,18 +319,12 @@ def validate_config(config: RecDistillConfig) -> bool:
             f"should be smaller than teacher ({train_cfg.teacher.embedding_dim})"
         )
     
-    # Check optimization parameters
-    if train_cfg.optimization.epochs < train_cfg.optimization.validation_rate:
-        issues.append(
-            f"⚠️  Validation rate ({train_cfg.optimization.validation_rate}) "
-            f"should be smaller than total epochs ({train_cfg.optimization.epochs})"
-        )
-    
     # Check early stopping if enabled
-    if train_cfg.early_stopping and train_cfg.early_stopping.enabled:
-        if train_cfg.early_stopping.patience > train_cfg.optimization.epochs:
+    early_stopping = train_cfg.optimization.early_stopping
+    if early_stopping and early_stopping.enabled:
+        if early_stopping.patience > train_cfg.optimization.epochs:
             issues.append(
-                f"⚠️  Early stopping patience ({train_cfg.early_stopping.patience}) "
+                f"Early stopping patience ({early_stopping.patience}) "
                 f"should be smaller than total epochs ({train_cfg.optimization.epochs})"
             )
     

@@ -73,8 +73,7 @@ class OptimizationConfig(BaseModel):
     batch_size: int = Field(default=512)
     learning_rate: float = Field(default=0.001)
     l2_reg: float = Field(default=0.0001)
-    validation_rate: int = Field(default=10)
-    validation_metric: str = Field(default="nDCGRendle2020@20")
+    early_stopping: "EarlyStoppingConfig" = Field(default_factory=lambda: EarlyStoppingConfig())
     bayesian: Dict[str, Any] = Field(default_factory=lambda: {"enabled": False})
 
 
@@ -122,6 +121,8 @@ class EarlyStoppingConfig(BaseModel):
     metric: str = Field(default="ndcg")
     patience: int = Field(default=10)
     min_delta: float = Field(default=0.0)
+    warmup: int = Field(default=0)
+    restore_best: bool = Field(default=False)
 
 
 class RuntimeConfig(BaseModel):
@@ -132,8 +133,6 @@ class RuntimeConfig(BaseModel):
     output_path: Optional[str] = Field(default=None)
     output_strategy: str = Field(default="fixed")
     save_every: int = Field(default=0)
-    gpu: int = Field(default=0)
-    backend: str = Field(default="pytorch")
     wandb: Dict[str, Any] = Field(default_factory=lambda: {"enabled": False})
     extra_args: List[str] = Field(default_factory=list)
 
@@ -215,7 +214,6 @@ class DistillStudentTrainingConfig(BaseModel):
     distillation: DistillerConfig = Field(...)
     runtime: RuntimeConfig = Field(...)
     evaluation: EvaluationConfig = Field(...)
-    early_stopping: Optional[EarlyStoppingConfig] = Field(default_factory=EarlyStoppingConfig)
 
     @model_validator(mode="after")
     def validate_cross_config_contracts(self) -> "DistillStudentTrainingConfig":

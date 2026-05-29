@@ -1,21 +1,20 @@
 experiment:
-  id: 001
+  id: '001'
   name: elliot_lgcn_citeulike
   kind: teacher
-
 train_teacher:
   dataset: citeulike
-
   teacher:
     default: teacher/elliot/lgcn.yaml
-
   optimization:
     default: optimization/default.yaml
     batch_size: 2048
-
+    bayesian:
+      enabled: true
+    early_stopping:
+      enabled: true
   runtime:
     default: runtime/default.yaml
-
   evaluation:
     default: evaluation/default.yaml
     batch_size: 1024

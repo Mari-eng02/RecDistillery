@@ -1,32 +1,27 @@
 experiment:
-  id: 001
+  id: '001'
   name: de_citeulike
   kind: recdistill
-
 distill_student:
   dataset: citeulike
-  
   teacher:
     default: teacher/elliot/lgcn.yaml
-    path: results/teacher/20260529_111159_elliot_LGCN_citeulike_001/artifacts/elliot_LGCN_citeulike_001_best.teacher
-  
+    path: null
   student:
     default: student/elliot/lgcn.yaml
-
   optimization:
     default: optimization/default.yaml
     batch_size: 2048
-    
+    bayesian:
+      enabled: true
+    early_stopping:
+      enabled: true
   distillation:
     strategy: DE
     default: distillation/de.yaml
-  
   runtime:
     default: runtime/default.yaml
     num_workers: 4
-  
   evaluation:
     default: evaluation/default.yaml
     batch_size: 256
-  
-  

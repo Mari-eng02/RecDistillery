@@ -6,77 +6,40 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 if [ "$#" -ne 3 ]; then
-
-  echo "Usage: $0 <distiller> <dataset> <model>"
-
+  echo "Usage: $0 <distiller> <dataset> <student_model>"
   exit 1
-
 fi
 
-DISTILLER="$1"
-
-DATASET="$2"
-
-MODEL="$3"
-DISTILLER_LC="$(echo "${DISTILLER}" | tr '[:upper:]' '[:lower:]')"
-DATASET_LC="$(echo "${DATASET}" | tr '[:upper:]' '[:lower:]')"
-MODEL_LC="$(echo "${MODEL}" | tr '[:upper:]' '[:lower:]')"
-
-EMBEDDING_DIM=20
-
-TOP_K=20
-CONFIG_PATH="config/presets/recdistill/final_rerun/${DISTILLER_LC}/${MODEL_LC}/${DATASET_LC}/best.yaml"
+DISTILLER_LC="$(echo "$1" | tr '[:upper:]' '[:lower:]')"
+DATASET_LC="$(echo "$2" | tr '[:upper:]' '[:lower:]')"
+MODEL_LC="$(echo "$3" | tr '[:upper:]' '[:lower:]')"
 
 cd "${REPO_ROOT}"
 export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 
-if [ ! -f "${CONFIG_PATH}" ]; then
-  echo "Config not found: ${CONFIG_PATH}" >&2
+ARTIFACT="$(python3 - "${DISTILLER_LC}" "${DATASET_LC}" "${MODEL_LC}" <<'PY'
+from pathlib import Path
+import sys
+
+distiller, dataset, model = [arg.lower() for arg in sys.argv[1:4]]
+candidates = [
+    path
+    for path in Path("results/recdistill").glob("*/artifacts/*_best.distilled_student")
+    if distiller in path.name.lower()
+    and dataset in path.name.lower()
+    and model in path.name.lower()
+]
+if candidates:
+    print(max(candidates, key=lambda path: path.stat().st_mtime))
+PY
+)"
+
+if [ -z "${ARTIFACT}" ]; then
+  echo "No best distilled student artifact found for ${DISTILLER_LC}/${MODEL_LC}/${DATASET_LC}."
   exit 1
 fi
 
-echo "============================================================"
-
-echo "[START] Student evaluation"
-
-echo "Timestamp: $(date)"
-
-echo "Distiller: ${DISTILLER}"
-
-echo "Dataset:   ${DATASET}"
-
-echo "Model:     ${MODEL}"
-
-echo "Emb dim:   ${EMBEDDING_DIM}"
-
-echo "Top-k:     ${TOP_K}"
-echo "Config:    ${CONFIG_PATH}"
-
-echo "============================================================"
-
-echo "[1/1] Evaluating distilled student artifact..."
-
 python3 scripts/recdistill/evaluate_students.py \
-  --dataset "${DATASET_LC}" \
-  --distiller "${DISTILLER_LC}" \
-  --teacher-framework recbole \
-  --teacher-model "${MODEL_LC}" \
-  --student-framework recbole \
-  --student-backbone "${MODEL_LC}" \
-  --student-embedding-dim "${EMBEDDING_DIM}" \
-  --top-k "${TOP_K}" \
+  --path "${ARTIFACT}" \
+  --top-k 20 \
   --assert-no-train-leak
-
-echo "============================================================"
-
-echo "[DONE] Student evaluation completed"
-
-echo "Timestamp: $(date)"
-
-echo "Distiller: ${DISTILLER}"
-
-echo "Dataset:   ${DATASET}"
-
-echo "Model:     ${MODEL}"
-
-echo "============================================================"

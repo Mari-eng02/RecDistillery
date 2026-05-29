@@ -4,6 +4,4 @@ num_workers: 0
 output_path: null
 output_strategy: fixed
 save_every: 0
-gpu: 0
-backend: pytorch
 extra_args: []

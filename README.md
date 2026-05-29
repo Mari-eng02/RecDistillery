@@ -2,7 +2,7 @@
 
 RecDistillery is a modular framework for Knowledge Distillation in Recommender Systems, built around a simple idea:
 
-> Great recommendation models, like fine spirits, should be distilled — not diluted.
+> Great recommendation models, like fine spirits, should be distilled -- not diluted.
 
 Large teacher models contain rich collaborative knowledge, complex ranking behaviors, structural information, and latent relational patterns. RecDistillery provides the tools to extract, refine, and transfer this knowledge into lightweight student models through unified and reproducible distillation pipelines.
 
@@ -269,10 +269,14 @@ python scripts/recdistill/import_teacher.py \
   --dataset citeulike
 ```
 
-Imported teachers are always saved with the canonical teacher layout:
+Imported teachers are saved as tracked teacher runs:
 
 ```text
-results/teachers/<framework>/<model>/<dataset>/imported/<framework>_<model>_<dataset>_<embedding_dim>.teacher
+results/teacher/<timestamp>_<external>_<model>_<dataset>_<experiment_id>/
+|-- artifacts/<external>_<model>_<dataset>_<experiment_id>_best.teacher
+|-- config/<external>_<model>_<dataset>_<experiment_id>.yaml
+|-- logs/import_summary.json
+`-- perf/
 ```
 
 ## Teacher Training
@@ -311,7 +315,7 @@ For imported teachers, pass the artifact explicitly:
 
 ```bash
 python scripts/recdistill/teacher_smoke.py \
-  --teacher-path results/teachers/<framework>/<model>/<dataset>/imported/<teacher>.teacher \
+  --teacher-path results/teacher/<run>/artifacts/<teacher>_best.teacher \
   --teacher-framework <framework> \
   --teacher-model <model> \
   --dataset <dataset> \
@@ -350,20 +354,17 @@ Example config-driven distillation:
 
 ```bash
 python scripts/recdistill/train_student_from_config.py \
-  --dataset citeulike \
-  --teacher-model BPRMF \
-  --teacher-framework recbole \
-  --distiller de \
-  --student-backbone LGCN \
-  --student-framework recbole
+  --config config/experiments/recdistill/de_citeulike_001.yaml
 ```
 
-For imported teachers, pass only the imported artifact path. Do not pass `--teacher-model` or `--teacher-framework`; those are reserved for teacher models that RecDistill resolves/trains through its adapter-backed registry.
+When `--config` is omitted, pass an explicit teacher artifact path. Do not pass
+`--teacher-model` or `--teacher-framework`; those are reserved for complete
+configs and native teacher training.
 
 ```bash
 python scripts/recdistill/train_student_from_config.py \
   --dataset citeulike \
-  --teacher-path results/teachers/lenskit/ItemKNNScorer/citeulike/imported/lenskit_ItemKNNScorer_citeulike_200.teacher \
+  --teacher-path results/teacher/<run>/artifacts/<teacher>_best.teacher \
   --distiller rrd \
   --student-backbone BPRMF \
   --student-framework recbole
@@ -404,7 +405,7 @@ bash experiments/recdistill/train_single_distiller.sh <distiller> <dataset> <tea
 Baseline example:
 
 ```bash
-bash experiments/baseline/teacher_training.sh [teacher_framework] [teacher_model] <dataset> [gpu] [grid|best]
+bash experiments/baseline/teacher_training.sh [teacher_framework] [teacher_model] <dataset> [gpu]
 ```
 
 ---
@@ -434,7 +435,9 @@ config/experiments/student/
 config/experiments/recdistill/
 ```
 
-On-the-fly generated configs are saved there too.
+Manually planned experiments live there. On-the-fly generated configs are saved
+as run artifacts under `results/<kind>/<run>/config/`, not duplicated back into
+`config/experiments/`.
 
 ---
 
@@ -451,82 +454,61 @@ Teacher evaluation example:
 
 ```bash
 python scripts/recdistill/evaluate_teacher.py \
-  --dataset citeulike \
-  --framework recbole \
-  --model BPRMF \
-  --embedding-dim 200 \
-  --top-k 20
+  --teacher-path results/teacher/<run>/artifacts/<teacher>_best.teacher 
 ```
 
 Plain student evaluation example:
 
 ```bash
 python scripts/recdistill/evaluate_students.py \
-  --dataset citeulike \
-  --distiller plain \
-  --student-framework recbole \
-  --student-backbone LGCN \
-  --student-embedding-dim 20 \
-  --top-k 20
+  --student-path results/student/<run>/artifacts/<student>_best.student
 ```
 
 Distilled student evaluation example:
 
 ```bash
 python scripts/recdistill/evaluate_students.py \
-  --dataset citeulike \
-  --distiller de \
-  --teacher-framework recbole \
-  --teacher-model BPRMF \
-  --student-framework recbole \
-  --student-backbone LGCN \
-  --student-embedding-dim 20 \
-  --top-k 20
+  --student-path results/recdistill/<run>/artifacts/<recdistill>_best.distilled_student
 ```
 
 ---
 
 # Results structure
 
-The setup script creates the base runtime directories used by the pipeline, including `results/`, and `data/`.
+The setup script creates the base runtime directories used by the pipeline, including `results/` and `data/`.
 
-Teacher artifacts trained with fixed parameters are saved under:
-
-```text
-results/teachers/<framework>/<model>/<dataset>/fixed/wei/<framework>_<model>_<dataset>_<embedding_dim>.teacher
-```
-
-Teacher artifacts trained with best parameters from Bayesian search are saved under:
+Results use exactly three top-level experiment kinds:
 
 ```text
-results/teachers/<framework>/<model>/<dataset>/best/wei/<framework>_<model>_<dataset>_<embedding_dim>.teacher
+results/teacher/
+results/student/
+results/recdistill/
 ```
 
-Imported teacher artifacts are saved under:
+Each run is stored as:
 
 ```text
-results/teachers/<framework>/<model>/<dataset>/imported/<framework>_<model>_<dataset>_<embedding_dim>.teacher
+results/<kind>/<timestamp>_<framework>_<model>_<dataset>_<experiment_id>/
+|-- artifacts/
+|-- config/
+|-- logs/
+`-- perf/
 ```
 
-Plain student artifacts trained with fixed parameters are saved under:
+Best artifacts use the same identity as the run:
 
 ```text
-results/students/<framework>/<model>/<dataset>/fixed/wei/<framework>_<model>_<dataset>_<embedding_dim>.student
+results/<kind>/<run>/artifacts/<framework>_<model>_<dataset>_<experiment_id>_best.<kind_ext>
 ```
 
-Plain student artifacts trained with best parameters from Bayesian search are saved under:
+For `recdistill`, the model label is `<strategy>_<student_backbone>`, for example:
 
 ```text
-results/students/<framework>/<model>/<dataset>/best/wei/<framework>_<model>_<dataset>_<embedding_dim>.student
+results/recdistill/20260529_120251_elliot_DE_LGCN_citeulike_001/artifacts/elliot_DE_LGCN_citeulike_001_best.distilled_student
 ```
 
-Distilled student artifacts follow the selected strategy namespace:
-
-```text
-results/recdistill/<distiller>/<teacher_framework>/<teacher_model>/<student_framework>/<student_model>/<dataset>/<strategy>/wei/<teacher_framework>_<teacher_model>_<student_framework>_<student_model>_<dataset>_<student_embedding_dim>.distilled_student
-```
-
-Use `fixed/wei` for runs with fixed parameters and `best/wei` for reruns with best parameters found by Bayesian search. Evaluation metrics go under the sibling `perf/` directory. Imported teachers go under `imported/`.
+Bayesian runs additionally save `logs/best_trial.json`, `logs/optuna_trials.json`, `logs/optuna_runtime_records.json`, and
+`config/<experiment>_best.yaml`. 
 
 ---
 
@@ -549,6 +531,11 @@ python3 scripts/recdistill/train_student_from_config.py \
 ## Outputs
 
 ```text
-results/recdistill/<distiller>/<teacher_framework>/<teacher_model>/<student_framework>/<student_model>/<dataset>/tracked/<run_id>/
+results/recdistill/<timestamp>_<student_framework>_<strategy>_<student_model>_<dataset>_<experiment_id>/
+|-- artifacts/
+|-- config/
+|-- logs/run_recap.json
+|-- logs/run_recap.tsv
+`-- perf/
 ```
 

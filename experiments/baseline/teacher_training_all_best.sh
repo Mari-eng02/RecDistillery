@@ -5,7 +5,7 @@ set -euo pipefail
 usage() {
   echo "Usage: bash experiments/baseline/teacher_training_all_best.sh [gpu]"
   echo
-  echo "Runs teacher_training.py sequentially in 'best' mode for:"
+  echo "Runs teacher_training.py sequentially for:"
   echo "  datasets: citeulike, bookcrossing, amazon_cd"
   echo "  models:   BPRMF, LGCN, NMF"
   echo
@@ -32,8 +32,6 @@ fi
 
 DATASETS=("citeulike" "bookcrossing" "amazon_cd")
 MODELS=("BPRMF" "LGCN" "NMF")
-BEST_FLAG="best"
-
 LOG_DIR="experiments/logs"
 mkdir -p "${LOG_DIR}"
 RUNNER_LOG="${LOG_DIR}/teacher_training_all_best.log"
@@ -46,34 +44,32 @@ if [ "${INTERNAL_RUN}" != "--internal-run" ]; then
   echo "Detached runner started."
   echo "PID: ${PID}"
   echo "Runner log: ${RUNNER_LOG}"
-  echo "Per-model logs: ${LOG_DIR}/*_*_${BEST_FLAG}.out and .error"
+  echo "Per-model logs: ${LOG_DIR}/*_*.out and .error"
   exit 0
 fi
 
 echo "Teacher training all-best runner started at $(date)"
 echo "GPU: ${GPU}"
-echo "Mode: ${BEST_FLAG}"
 echo
 
 for DATASET in "${DATASETS[@]}"; do
   for MODEL in "${MODELS[@]}"; do
     MODEL_LC="$(echo "${MODEL}" | tr '[:upper:]' '[:lower:]')"
     DATASET_LC="$(echo "${DATASET}" | tr '[:upper:]' '[:lower:]')"
-    PRESET_PATH="config/presets/elliot/teacher/${DATASET_LC}/${MODEL_LC}/best/${MODEL}_${DATASET_LC}_best.yaml"
-    if [ ! -f "${PRESET_PATH}" ]; then
-      echo "Preset not found: ${PRESET_PATH}"
+    MODEL_CONFIG_PATH="config/teacher/elliot/${MODEL_LC}.yaml"
+    if [ ! -f "${MODEL_CONFIG_PATH}" ]; then
+      echo "Teacher model config not found: ${MODEL_CONFIG_PATH}"
       exit 1
     fi
-    CMD=(python scripts/teacher_training/teacher_training.py --config "${PRESET_PATH}")
+    CMD=(python scripts/teacher_training/teacher_training.py --framework elliot --model "${MODEL}" --dataset "${DATASET_LC}")
 
-    OUT_FILE="${LOG_DIR}/${MODEL}_${DATASET}_${BEST_FLAG}.out"
-    ERR_FILE="${LOG_DIR}/${MODEL}_${DATASET}_${BEST_FLAG}.error"
+    OUT_FILE="${LOG_DIR}/${MODEL}_${DATASET}.out"
+    ERR_FILE="${LOG_DIR}/${MODEL}_${DATASET}.error"
 
     echo "Running model: ${MODEL}"
     echo "Dataset: ${DATASET}"
     echo "GPU: ${GPU}"
-    echo "Mode: ${BEST_FLAG}"
-    echo "Preset: ${PRESET_PATH}"
+    echo "Model config: ${MODEL_CONFIG_PATH}"
     echo "Logs: ${OUT_FILE} / ${ERR_FILE}"
 
     CUDA_VISIBLE_DEVICES="${GPU}" "${CMD[@]}" > "${OUT_FILE}" 2> "${ERR_FILE}"

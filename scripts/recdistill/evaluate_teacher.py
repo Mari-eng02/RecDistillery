@@ -130,20 +130,25 @@ def _build_train_dataset(
 
 
 def _recommend_topk(
-    user_embeddings: torch.Tensor,
-    item_embeddings: torch.Tensor,
+    user_embeddings: torch.Tensor | None,
+    item_embeddings: torch.Tensor | None,
     users: list[int],
     train_seen: dict[int, set[int]],
     top_k: int,
     batch_size: int,
     device: torch.device,
     scorer=None,
+    num_items: int | None = None,
 ) -> tuple[dict[int, list[int]], int]:
-    num_items = int(item_embeddings.size(0))
+    if num_items is None:
+        if item_embeddings is not None:
+            num_items = int(item_embeddings.size(0))
+        elif hasattr(scorer, "num_items"):
+            num_items = int(getattr(scorer, "num_items"))
+        else:
+            raise ValueError("num_items is required for scorer-only teacher evaluation.")
     k = max(1, min(int(top_k), num_items))
 
-    user_emb = user_embeddings.to(device)
-    item_emb = item_embeddings.to(device)
     recs: dict[int, list[int]] = {}
     leaked_users = 0
 
@@ -164,6 +169,10 @@ def _recommend_topk(
                 recs[user] = [item for item in raw_topk if item not in seen][:top_k]
             return recs, leaked_users
 
+        if user_embeddings is None or item_embeddings is None:
+            raise ValueError("Embedding-based teacher evaluation requires user and item embeddings.")
+        user_emb = user_embeddings.to(device)
+        item_emb = item_embeddings.to(device)
         for offset in range(0, len(users), batch_size):
             batch_users = users[offset : offset + batch_size]
             user_idx = torch.tensor(batch_users, dtype=torch.long, device=device)
@@ -222,14 +231,15 @@ def _metrics_at_k(recs: dict[int, list[int]], gt: dict[int, set[int]], k: int) -
 
 
 def _evaluate_split(
-    user_embeddings: torch.Tensor,
-    item_embeddings: torch.Tensor,
+    user_embeddings: torch.Tensor | None,
+    item_embeddings: torch.Tensor | None,
     train_seen: dict[int, set[int]],
     gt: dict[int, set[int]],
     top_k: int,
     batch_size: int,
     device: torch.device,
     scorer=None,
+    num_items: int | None = None,
 ) -> tuple[dict[str, float], int]:
     users = sorted(user for user, items in gt.items() if items)
     if not users:
@@ -243,6 +253,7 @@ def _evaluate_split(
         batch_size=batch_size,
         device=device,
         scorer=scorer,
+        num_items=num_items,
     )
     return _metrics_at_k(recs, gt, top_k), leaked_users
 
@@ -307,7 +318,7 @@ def _default_eval_filename(
     framework: str | None,
     model: str,
     dataset: str,
-    embedding_dim: int,
+    embedding_dim: int | None,
     top_k: int,
     suffix: str,
     teacher_path: Path | None = None,
@@ -318,14 +329,15 @@ def _default_eval_filename(
     if experiment_id:
         stem = f"{stem}_{experiment_id}"
     else:
-        stem = f"{stem}_{int(embedding_dim)}"
+        dim_label = int(embedding_dim) if embedding_dim is not None else "scorer"
+        stem = f"{stem}_{dim_label}"
     return f"{stem}_eval_top{top_k}{suffix}"
 
 
 def _default_output_json(
     dataset: str,
     model: str,
-    embedding_dim: int,
+    embedding_dim: int | None,
     top_k: int,
     framework: str | None = None,
     teacher_path: Path | None = None,
@@ -346,7 +358,7 @@ def _default_output_json(
         teacher_weights_path(
             model=model,
             dataset=dataset,
-            embedding_dim=embedding_dim,
+            embedding_dim=_require_embedding_dim_for_default_path(embedding_dim),
             phase="best",
             framework=framework,
         )
@@ -367,7 +379,7 @@ def _default_output_json(
 def _default_output_tsv(
     dataset: str,
     model: str,
-    embedding_dim: int,
+    embedding_dim: int | None,
     top_k: int,
     framework: str | None = None,
     teacher_path: Path | None = None,
@@ -388,7 +400,7 @@ def _default_output_tsv(
         teacher_weights_path(
             model=model,
             dataset=dataset,
-            embedding_dim=embedding_dim,
+            embedding_dim=_require_embedding_dim_for_default_path(embedding_dim),
             phase="best",
             framework=framework,
         )
@@ -406,11 +418,17 @@ def _default_output_tsv(
     )
 
 
+def _require_embedding_dim_for_default_path(embedding_dim: int | None) -> int:
+    if embedding_dim is None:
+        raise ValueError("embedding_dim is required when resolving a default teacher path.")
+    return int(embedding_dim)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate teacher model recommendation metrics.")
     parser.add_argument("--dataset", default=None, help="Dataset name")
     parser.add_argument("--teacher-model", "--model", dest="model", default=None, choices=["BPRMF", "LGCN", "NMF", "NFM"], help="Teacher model name")
-    parser.add_argument("--teacher-framework", "--framework", dest="framework", default=None, choices=["recbole", "elliot", "lenskit"], help="Framework namespace for default teacher path")
+    parser.add_argument("--teacher-framework", "--framework", dest="framework", default=None, choices=["recbole", "elliot", "lenskit", "external"], help="Framework namespace for default teacher path")
     parser.add_argument("--embedding-dim", default=None, type=int, help="Teacher embedding dim used in filename")
     parser.add_argument("--teacher-path", default=None, help="Optional explicit path to .teacher file")
     parser.add_argument("--top-k", type=int, default=20, help="Top-k recommendations for metrics")
@@ -438,7 +456,9 @@ def main() -> None:
     metadata = teacher_state.metadata if isinstance(teacher_state.metadata, dict) else {}
     dataset = args.dataset or metadata.get("dataset")
     resolved_model = resolved_model or metadata.get("model_name") or metadata.get("model") or metadata.get("backbone")
-    embedding_dim = args.embedding_dim or metadata.get("embedding_dim") or teacher_state.embedding_dim
+    embedding_dim = args.embedding_dim or metadata.get("embedding_dim")
+    if embedding_dim is None and teacher_state.has_embeddings:
+        embedding_dim = teacher_state.embedding_dim
     resolved_framework = args.framework or metadata.get("framework")
     run_config = metadata.get("config") if isinstance(metadata.get("config"), dict) else {}
     resolved_framework = resolved_framework or run_config.get("framework")
@@ -446,16 +466,17 @@ def main() -> None:
         parser.error("--dataset is required because it could not be inferred from --teacher-path metadata.")
     if resolved_model is None:
         parser.error("--teacher-model is required because it could not be inferred from --teacher-path metadata.")
-    if embedding_dim is None:
+    if embedding_dim is None and teacher_state.scorer is None:
         parser.error("--embedding-dim is required because it could not be inferred from --teacher-path metadata.")
     dataset = str(dataset)
     resolved_model = str(resolved_model).upper()
-    embedding_dim = int(embedding_dim)
+    embedding_dim = int(embedding_dim) if embedding_dim is not None else None
 
     device = torch.device(args.device) if args.device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     print("\n" + "=" * 80)
-    print(f"Evaluating teacher: {resolved_model} ({embedding_dim}D) on {dataset}")
+    dim_label = f"{embedding_dim}D" if embedding_dim is not None else "scorer-only"
+    print(f"Evaluating teacher: {resolved_model} ({dim_label}) on {dataset}")
     if args.framework:
         print(f"Framework: {args.framework}")
     print(f"Teacher path: {teacher_path}")
@@ -512,6 +533,7 @@ def main() -> None:
         batch_size=args.batch_size,
         device=device,
         scorer=teacher_state.scorer,
+        num_items=teacher_state.num_items,
     )
     test_metrics, test_leaks = _evaluate_split(
         user_embeddings=teacher_state.user_embeddings,
@@ -522,6 +544,7 @@ def main() -> None:
         batch_size=args.batch_size,
         device=device,
         scorer=teacher_state.scorer,
+        num_items=teacher_state.num_items,
     )
 
     if args.assert_no_train_leak and (val_leaks > 0 or test_leaks > 0):

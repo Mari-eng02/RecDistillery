@@ -1,21 +1,20 @@
 experiment:
-  id: 002
-  name: elliot_nmf_citeulike
+  id: '002'
+  name: lenskit_bprmf_citeulike
   kind: student
-
 train_student:
   dataset: citeulike
-
   student:
-    default: student/elliot/nmf.yaml
-
+    default: student/lenskit/bprmf.yaml
   optimization:
     default: optimization/default.yaml
     batch_size: 2048
-
+    bayesian:
+      enabled: true
+    early_stopping:
+      enabled: true
   runtime:
     default: runtime/default.yaml
-
   evaluation:
     default: evaluation/default.yaml
     batch_size: 1024

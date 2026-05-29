@@ -80,7 +80,7 @@ def load_config(config_path: Path) -> dict[str, Any]:
         raise ValueError(f"Config root must be a mapping: {config_path}")
     data.setdefault("experiment", {})
     if isinstance(data["experiment"], dict):
-        data["experiment"]["id"] = normalize_experiment_id(data["experiment"].get("id"), config_path=config_path)
+        data["experiment"]["id"] = str(normalize_experiment_id(data["experiment"].get("id"), config_path=config_path))
     return data
 
 
@@ -246,6 +246,63 @@ def _prepare_trial_config(
     return config
 
 
+def _best_config_from_trial(
+    base_config: dict[str, Any],
+    *,
+    kind: str,
+    best_params: dict[str, Any],
+    seed: int,
+    trial_number: int,
+) -> dict[str, Any]:
+    config = copy.deepcopy(base_config)
+    train = _train_conf(config, kind)
+    for dotted_key, value in best_params.items():
+        _set_dotted(train, dotted_key, value)
+
+    _set_dotted(train, "runtime.seed", int(seed) + int(trial_number))
+    runtime = train.get("runtime")
+    if isinstance(runtime, dict):
+        runtime.pop("output_path", None)
+
+    _set_dotted(train, "optimization.bayesian.enabled", False)
+    distillation = train.get("distillation")
+    if isinstance(distillation, dict) and isinstance(distillation.get("bayesian"), dict):
+        distillation["bayesian"]["enabled"] = False
+
+    experiment = config.setdefault("experiment", {})
+    if isinstance(experiment, dict):
+        if "id" in experiment:
+            experiment["id"] = str(experiment["id"])
+        experiment["source_best_trial_number"] = int(trial_number)
+        experiment["source_best_trial_seed"] = int(seed) + int(trial_number)
+    return config
+
+
+def _write_best_config(
+    *,
+    base_config: dict[str, Any],
+    kind: str,
+    best_params: dict[str, Any],
+    seed: int,
+    trial_number: int,
+    config_path: Path,
+    config_dir: Path,
+) -> Path:
+    if yaml is None:
+        raise ModuleNotFoundError("PyYAML is required to write the best YAML config.")
+    best_config = _best_config_from_trial(
+        base_config,
+        kind=kind,
+        best_params=best_params,
+        seed=seed,
+        trial_number=trial_number,
+    )
+    best_config_path = config_dir / f"{config_path.stem}_best.yaml"
+    with best_config_path.open("w", encoding="utf-8") as fp:
+        yaml.safe_dump(best_config, fp, sort_keys=False, allow_unicode=False)
+    return best_config_path
+
+
 def _run_experiment(config: dict[str, Any], *, kind: str, config_path: Path | None) -> dict[str, Any]:
     if kind in {"teacher", "student"}:
         args = native_args_from_config(config, role=kind, config_path=config_path)
@@ -390,6 +447,15 @@ def _delete_if_exists(path_value: str | None) -> None:
     path = Path(path_value)
     if path.exists():
         path.unlink()
+
+
+def _cleanup_trial_artifacts(output_path: Path, keep_path: str | None) -> None:
+    keep_resolved = Path(keep_path).resolve() if keep_path else None
+    pattern = f"{output_path.stem}*{output_path.suffix}"
+    for candidate in output_path.parent.glob(pattern):
+        if keep_resolved is not None and candidate.resolve() == keep_resolved:
+            continue
+        _delete_if_exists(str(candidate))
 
 
 def main() -> None:
@@ -562,8 +628,7 @@ def main() -> None:
             trial.set_user_attr("best_artifact_path", summary.get("best_artifact_path"))
             trial.set_user_attr("best_epoch", summary.get("best_epoch"))
             trial.set_user_attr("early_stopped", summary.get("early_stopped"))
-            if summary.get("best_artifact_path") != str(output_path):
-                _delete_if_exists(str(output_path))
+            _cleanup_trial_artifacts(output_path, summary.get("best_artifact_path"))
         except Exception as exc:
             status = "failed"
             error_message = str(exc)
@@ -651,6 +716,16 @@ def main() -> None:
         "best_trial_number": int(best.number),
         "storage": storage,
     }
+    best_config_path = _write_best_config(
+        base_config=base_config,
+        kind=kind,
+        best_params=best.params,
+        seed=seed,
+        trial_number=int(best.number),
+        config_path=config_path,
+        config_dir=config_dir,
+    )
+    best_summary["best_config_path"] = str(best_config_path)
     best_source = best.user_attrs.get("best_artifact_path") or best.user_attrs.get("output_path")
     if best_source:
         best_source_path = Path(best_source)
@@ -678,6 +753,7 @@ def main() -> None:
     print(f"- trial number: {best.number}")
     print(f"- study: {study_name}")
     print(f"- storage: {storage}")
+    print(f"- best config: {best_config_path}")
 
     if not rerun_best_on_test:
         return

@@ -311,7 +311,7 @@ def build_command(config: dict) -> list[str]:
     optim_conf = train_conf.get("optimization", {})
     runtime_conf = train_conf.get("runtime", {})
     eval_conf = train_conf.get("evaluation", {})
-    early_conf = train_conf.get("early_stopping", {})
+    early_conf = optim_conf.get("early_stopping", {})
     wandb_conf = runtime_conf.get("wandb", {})
 
     dataset = train_conf.get("dataset")
@@ -687,10 +687,10 @@ def main() -> None:
         if isinstance(config["experiment"], dict):
             raw_meta = raw_config.get("experiment", {}) if isinstance(raw_config, dict) else {}
             raw_id = raw_meta.get("id") if isinstance(raw_meta, dict) else None
-            config["experiment"]["id"] = normalize_experiment_id(
+            config["experiment"]["id"] = str(normalize_experiment_id(
                 config["experiment"].get("id") or raw_id,
                 config_path=config_path,
-            )
+            ))
     else:
         args.student_framework = args.student_framework or "recbole"
         missing = [

@@ -22,7 +22,8 @@ train_teacher
 |-- teacher
 |   `-- default
 |-- optimization
-|   `-- default
+|   |-- default
+|   `-- early_stopping
 |-- runtime
 |   `-- default
 `-- evaluation
@@ -35,7 +36,8 @@ train_student
 |-- student
 |   `-- default
 |-- optimization
-|   `-- default
+|   |-- default
+|   `-- early_stopping
 |-- runtime
 |   `-- default
 `-- evaluation
@@ -53,7 +55,8 @@ distill_student
 |   |-- default
 |   `-- strategy
 |-- optimization
-|   `-- default
+|   |-- default
+|   `-- early_stopping
 |-- runtime
 |   `-- default
 `-- evaluation
@@ -94,7 +97,7 @@ Never generate rootless experiment configs.
 | Teacher architecture | `config/teacher/<framework>/<model>.yaml` | Teacher modules use `model`. |
 | Student architecture | `config/student/<framework>/<model>.yaml` | Student modules use `backbone`. |
 | Distiller parameters | `config/distillation/<strategy>.yaml` | Includes lambdas, temperatures, RRD, UnKD, topology options. |
-| Generic optimization | `config/optimization/` | Includes epochs, batch size, learning rate, L2 regularization, Bayesian settings. |
+| Generic optimization | `config/optimization/` | Includes epochs, batch size, learning rate, L2 regularization, early stopping, Bayesian settings. |
 | Runtime behavior | `config/runtime/` | Includes seed, device, workers, output strategy, logging args. |
 | Evaluation behavior | `config/evaluation/` | Includes cutoffs, metrics, evaluation frequency, selection policy. |
 | Experiment overrides | `config/experiments/` | Use sparingly for run-specific deviations from defaults. |
@@ -129,12 +132,13 @@ config/experiments/student/<framework>_<backbone>_<dataset>_<experiment_id>.yaml
 RecDistill experiment files:
 
 ```text
-config/experiments/recdistill/<distiller>_<teacher_framework>_<teacher_model>_to_<student_framework>_<student_backbone>_<dataset>_<experiment_id>.yaml
+config/experiments/recdistill/<distiller>_<dataset>_<experiment_id>.yaml
 ```
 
-Generated configs should be saved directly under `config/experiments/teacher/`,
+Manually authored configs live directly under `config/experiments/teacher/`,
 `config/experiments/student/`, or `config/experiments/recdistill/`, without
-additional nested directories.
+additional nested directories. On-the-fly generated configs are run artifacts
+and must be saved under `results/<kind>/<run>/config/`.
 
 ## Results Layout
 
@@ -255,6 +259,9 @@ Generic Bayesian settings belong in `optimization/`.
 
 Distiller-specific search spaces belong in `distillation/<strategy>.yaml`.
 
+Early stopping belongs under `optimization.early_stopping` for all experiment
+kinds. Do not add `early_stopping` as a sibling of `optimization`.
+
 `scripts/recdistill/run_optuna.py` is the shared Bayesian dispatcher for all
 three experiment kinds. It reads `experiment.kind` and runs the matching
 training backend:
@@ -274,8 +281,19 @@ continuing a previous study.
 During Bayesian search, keep only the validated best artifact for each trial
 (`trial_00000_best.*`) plus the promoted experiment best
 (`<framework>_<model>_<dataset>_<experiment_id>_best.*`).
-Do not keep the final non-best `trial_00000.*` artifact unless debugging a
-specific training trajectory.
+Do not keep final non-best `trial_00000.*`, periodic `trial_00000.epN.*`, or
+`trial_00000.earlystop_best.*` artifacts unless debugging a specific training
+trajectory.
+
+Bayesian runs must also write a reusable best config:
+
+```text
+results/<kind>/<run>/config/<experiment_config_stem>_best.yaml
+```
+
+This file contains the best sampled parameters in the YAML, disables
+`optimization.bayesian.enabled`, and records the best trial seed in
+`runtime.seed`.
 
 On-the-fly generated experiment configs are run artifacts. Save them directly
 under the run directory:
@@ -320,6 +338,7 @@ Never introduce:
 - dataset `strategy`
 - `optimization.optuna`
 - `optimization.grid_search`
+- root-level `early_stopping`
 - rootless experiment configs
 - RecDistill root `train_student`
 

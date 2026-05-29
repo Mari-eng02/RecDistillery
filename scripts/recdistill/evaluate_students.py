@@ -343,7 +343,7 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python scripts/recdistill/evaluate_students.py --path results/students/recbole/BPRMF/citeulike/fixed/wei/recbole_BPRMF_citeulike_64.student
+  python scripts/recdistill/evaluate_students.py --path results/student/<run>/artifacts/<student>_best.student
 
   python scripts/recdistill/evaluate_students.py ^
     --dataset citeulike ^

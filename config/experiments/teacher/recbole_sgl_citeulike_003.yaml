@@ -1,21 +1,20 @@
 experiment:
-  id: 003
+  id: '003'
   name: recbole_sgl_citeulike
   kind: teacher
-
 train_teacher:
   dataset: citeulike
-
   teacher:
     default: teacher/recbole/sgl.yaml
-
   optimization:
     default: optimization/default.yaml
     batch_size: 2048
-
+    bayesian:
+      enabled: true
+    early_stopping:
+      enabled: true
   runtime:
     default: runtime/default.yaml
-
   evaluation:
     default: evaluation/default.yaml
     batch_size: 1024

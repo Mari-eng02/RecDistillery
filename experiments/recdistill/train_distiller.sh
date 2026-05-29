@@ -25,7 +25,7 @@ usage() {
   echo "  bash experiments/recdistill/train_distiller.sh DE citeulike recbole ALL recbole SAME 0 0"
   echo "  bash experiments/recdistill/train_distiller.sh DE citeulike recbole BPRMF lenskit LGCN 0 1"
   echo "  bash experiments/recdistill/train_distiller.sh DE citeulike elliot NMF elliot SAME auto 1"
-  echo "  bash experiments/recdistill/train_distiller.sh RRD citeulike results/teachers/lenskit/ItemKNNScorer/citeulike/imported/lenskit_ItemKNNScorer_citeulike_200.teacher recbole BPRMF 0 1"
+  echo "  bash experiments/recdistill/train_distiller.sh RRD citeulike results/teacher/<run>/artifacts/<teacher>_best.teacher recbole BPRMF 0 1"
   echo "  DISTILLER_DETACH=0 bash experiments/recdistill/train_distiller.sh DE citeulike recbole BPRMF recbole LGCN auto 1"
 }
 
@@ -98,8 +98,8 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 LOG_DIR="${REPO_ROOT}/experiments/logs"
-TEACHER_CONFIG_DIR="${REPO_ROOT}/config/models/teacher"
-STUDENT_CONFIG_DIR="${REPO_ROOT}/config/models/student"
+TEACHER_CONFIG_DIR="${REPO_ROOT}/config/teacher"
+STUDENT_CONFIG_DIR="${REPO_ROOT}/config/student"
 
 mkdir -p "${LOG_DIR}"
 
@@ -202,6 +202,31 @@ discover_student_models() {
     | sort
 }
 
+resolve_teacher_artifact() {
+  local FW="$1"
+  local MODEL="$2"
+  local DATASET_NAME="$3"
+  python3 - "${REPO_ROOT}" "${FW}" "${MODEL}" "${DATASET_NAME}" <<'PY'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+framework = sys.argv[2].lower()
+model = sys.argv[3].lower()
+dataset = sys.argv[4].lower()
+artifacts = root.glob("results/teacher/*/artifacts/*_best.teacher")
+candidates = [
+    path
+    for path in artifacts
+    if framework in path.name.lower()
+    and model in path.name.lower()
+    and dataset in path.name.lower()
+]
+if candidates:
+    print(max(candidates, key=lambda path: path.stat().st_mtime))
+PY
+}
+
 run_one_pair() {
   local TEACHER_NAME="$1"
   local STUDENT_NAME="$2"
@@ -239,7 +264,13 @@ run_one_pair() {
   if [ "${IMPORTED_TEACHER}" = "1" ]; then
     CMD+=(--teacher-path "${TEACHER_PATH}")
   else
-    CMD+=(--teacher-framework "${TEACHER_FRAMEWORK_LC}" --teacher-model "${TEACHER_NAME_LC}")
+    RESOLVED_TEACHER_PATH="$(resolve_teacher_artifact "${TEACHER_FRAMEWORK_LC}" "${TEACHER_NAME_LC}" "${DATASET_LC}")"
+    if [ -z "${RESOLVED_TEACHER_PATH}" ]; then
+      echo "No trained teacher artifact found for ${TEACHER_FRAMEWORK_LC}/${TEACHER_NAME_LC} on ${DATASET_LC}."
+      echo "Train the teacher first or pass an explicit results/teacher/.../*_best.teacher path."
+      return 1
+    fi
+    CMD+=(--teacher-path "${RESOLVED_TEACHER_PATH}")
   fi
 
   if [ "${DRY_RUN}" = "1" ]; then

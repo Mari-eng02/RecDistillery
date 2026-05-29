@@ -602,7 +602,7 @@ def runner_args_from_config(config: RecDistillConfig) -> SimpleNamespace:
     optimization = train.optimization
     runtime = train.runtime
     evaluation = train.evaluation
-    early = train.early_stopping
+    early = optimization.early_stopping
 
     topology = _dict_section(distillation, "topology")
     rrd = _dict_section(distillation, "rrd")

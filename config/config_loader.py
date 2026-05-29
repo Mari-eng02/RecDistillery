@@ -275,7 +275,7 @@ class ConfigLoader:
             model=model,
             dataset=dataset,
         )
-        experiment.setdefault("id", experiment_id)
+        experiment["id"] = str(experiment_id)
         experiment.setdefault("name", _slug(name))
         experiment.setdefault("kind", kind_slug)
         root_key = _training_root_key(kind_slug)

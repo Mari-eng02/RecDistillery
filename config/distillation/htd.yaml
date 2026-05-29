@@ -1,10 +1,15 @@
 # Hidden Taste Distiller (HTD) Configuration
 strategy: HTD
-temperature: 3.0
-lambda_kl: 0.5
-initial_tau: 1.0
-min_tau: 1e-10
-decay_epochs: 100
+topology:
+  type: HTD
+  lambda_td: 0.5
+  alpha: 0.5
+  num_groups: 40
+  topology_mode: group_pe
+  initial_tau: 1.0
+  min_tau: 1e-10
+  decay_epochs: 100
+  entity_sample_size: 0
 
 bayesian:
   search_space:

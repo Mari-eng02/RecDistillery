@@ -81,6 +81,7 @@ distillation:
 - RecDistill configs use `distill_student.distillation.strategy`.
 - Experiment configs should reference model and distiller modules with `default:`.
 - Generic training parameters go under `optimization/`.
+- Early stopping settings go under `optimization.early_stopping`.
 - Distiller-specific parameters go under `distillation/<strategy>.yaml`.
 - Runtime parameters go under `runtime/`.
 - Evaluation parameters go under `evaluation/`.
@@ -107,13 +108,14 @@ python scripts/recdistill/train_student_from_config.py `
 ```
 
 If `--config` is omitted, scripts compose a config from modules and save the
-result under `config/experiments/<teacher|student|recdistill>/` with an
-experiment ID appended to the filename.
+resolved generated config as a run artifact under the new run directory. It is
+not duplicated into `config/experiments/`, which is reserved for manually
+authored experiment specs.
 
 Generated run outputs are saved under:
 
 ```text
-results/<teacher|student|recdistill>/<timestamp>_<teacher|student|recdistill>_<experiment_id>/
+results/<teacher|student|recdistill>/<timestamp>_<framework>_<model>_<dataset>_<experiment_id>/
 ```
 
 Each run directory contains `artifacts/`, `config/`, `logs/`, and `perf/`.

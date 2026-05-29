@@ -59,6 +59,13 @@ class NativeTrainingArgs:
     selection_split: str = "val"
     selection_metric: str = "ndcg"
     assert_no_train_leak: bool = True
+    early_stop: bool = False
+    early_stop_mode: str = "val_metric"
+    early_stop_metric: str = "ndcg"
+    early_stop_patience: int = 10
+    early_stop_min_delta: float = 0.0
+    early_stop_warmup: int = 0
+    early_stop_restore_best: bool = False
     config_path: str | None = None
 
 
@@ -90,6 +97,10 @@ def native_args_from_model_config(
         for key, value in overrides.items():
             if value is not None and hasattr(args, key):
                 setattr(args, key, value)
+    if args.early_stop and str(args.early_stop_mode).lower() == "val_metric" and args.skip_eval:
+        raise ValueError("optimization.early_stopping.mode='val_metric' requires evaluation.enabled=true.")
+    if args.early_stop and int(args.early_stop_patience) < 0:
+        raise ValueError("optimization.early_stopping.patience must be non-negative.")
     return args
 
 
@@ -118,6 +129,15 @@ def native_args_to_config(args: NativeTrainingArgs) -> dict[str, Any]:
             "batch_size": int(args.batch_size),
             "learning_rate": float(args.learning_rate),
             "l2_reg": float(args.l2_reg),
+            "early_stopping": {
+                "enabled": bool(args.early_stop),
+                "mode": args.early_stop_mode,
+                "metric": args.early_stop_metric,
+                "patience": int(args.early_stop_patience),
+                "min_delta": float(args.early_stop_min_delta),
+                "warmup": int(args.early_stop_warmup),
+                "restore_best": bool(args.early_stop_restore_best),
+            },
         },
         "runtime": {
             "seed": int(args.seed),
@@ -193,6 +213,7 @@ def native_args_from_config(
     optim_conf = train.get("optimization", {}) if isinstance(train, dict) else {}
     runtime_conf = train.get("runtime", {}) if isinstance(train, dict) else {}
     eval_conf = train.get("evaluation", {}) if isinstance(train, dict) else {}
+    early_conf = optim_conf.get("early_stopping", {}) if isinstance(optim_conf, dict) else {}
 
     dataset = train.get("dataset") or config.get("dataset") or fallback_dataset
     backbone = model_conf.get("backbone") or model_conf.get("model") or fallback_backbone
@@ -269,6 +290,13 @@ def native_args_from_config(
         selection_split=str(eval_conf.get("selection_split", "val")),
         selection_metric=str(eval_conf.get("selection_metric", "ndcg")),
         assert_no_train_leak=bool(eval_conf.get("assert_no_train_leak", True)),
+        early_stop=bool(early_conf.get("enabled", False)),
+        early_stop_mode=str(early_conf.get("mode", "val_metric")),
+        early_stop_metric=str(early_conf.get("metric", "ndcg")),
+        early_stop_patience=int(early_conf.get("patience", 10)),
+        early_stop_min_delta=float(early_conf.get("min_delta", 0.0)),
+        early_stop_warmup=int(early_conf.get("warmup", 0)),
+        early_stop_restore_best=bool(early_conf.get("restore_best", False)),
         config_path=str(config_path_obj) if config_path_obj is not None else None,
     )
     if overrides:
@@ -381,6 +409,16 @@ class NativeModelTrainingRunner:
         best_score = float("-inf")
         best_epoch = 0
         best_artifact = best_checkpoint_path(self.output_path)
+        early_best_value = float("inf") if self.args.early_stop_mode == "loss" else float("-inf")
+        early_best_epoch = 0
+        early_bad_steps = 0
+        early_stopped = False
+        early_stop_reason: str | None = None
+        early_monitor_name = "total_loss" if self.args.early_stop_mode == "loss" else f"val_{self.args.early_stop_metric}"
+        early_best_artifact = _with_role_suffix(
+            self.output_path,
+            f".earlystop_best{TEACHER_EXT if self.role == 'teacher' else STUDENT_EXT}",
+        )
 
         for epoch in range(1, int(self.args.epochs) + 1):
             metrics = self.trainer.train_epoch()
@@ -416,6 +454,40 @@ class NativeModelTrainingRunner:
             history.append(row)
             self._print_epoch(epoch, metrics, current_eval)
 
+            early_state = self._maybe_early_stop(
+                epoch=epoch,
+                row=row,
+                current_eval=current_eval,
+                early_best_value=early_best_value,
+                early_best_epoch=early_best_epoch,
+                early_bad_steps=early_bad_steps,
+                early_monitor_name=early_monitor_name,
+            )
+            early_best_value = early_state["best_value"]
+            early_best_epoch = early_state["best_epoch"]
+            early_bad_steps = early_state["bad_steps"]
+            row["early_monitor_name"] = early_monitor_name if self.args.early_stop else None
+            row["early_monitor_value"] = early_state["current_value"]
+            row["early_bad_steps"] = early_bad_steps if self.args.early_stop else None
+            if self.args.early_stop and early_state["improved"] and self.args.early_stop_restore_best:
+                self._save_artifact(
+                    early_best_artifact,
+                    epoch,
+                    history,
+                    best_epoch,
+                    best_score if best_epoch > 0 else None,
+                    extra={
+                        "early_monitor_name": early_monitor_name,
+                        "early_best_epoch": early_best_epoch,
+                        "early_best_value": early_best_value,
+                    },
+                )
+            if early_state["stopped"]:
+                early_stopped = True
+                early_stop_reason = early_state["reason"]
+                print(f"Early stopping triggered at epoch {epoch}: {early_stop_reason}")
+                break
+
             if self.args.save_every > 0 and epoch % int(self.args.save_every) == 0:
                 periodic = _with_role_suffix(
                     self.output_path,
@@ -424,7 +496,20 @@ class NativeModelTrainingRunner:
                 self._save_artifact(periodic, epoch, history, best_epoch, best_score if best_epoch > 0 else None)
 
         final_epoch = int(history[-1]["epoch"]) if history else 0
-        self._save_artifact(self.output_path, final_epoch, history, best_epoch, best_score if best_epoch > 0 else None)
+        self._save_artifact(
+            self.output_path,
+            final_epoch,
+            history,
+            best_epoch,
+            best_score if best_epoch > 0 else None,
+            extra={
+                "early_stopped": early_stopped,
+                "early_stop_reason": early_stop_reason,
+                "early_best_epoch": early_best_epoch if self.args.early_stop else 0,
+                "early_best_value": early_best_value if self.args.early_stop and early_best_epoch > 0 else None,
+                "early_monitor_name": early_monitor_name if self.args.early_stop else None,
+            },
+        )
         history_path = self.run_dir / "logs" / f"{self.output_path.stem}.history.json"
         history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
 
@@ -439,6 +524,11 @@ class NativeModelTrainingRunner:
             "best_epoch": best_epoch,
             "best_selection_score": best_score if best_epoch > 0 else None,
             "best_path": str(best_artifact) if best_epoch > 0 else None,
+            "early_stopped": early_stopped,
+            "early_stop_reason": early_stop_reason,
+            "early_best_epoch": early_best_epoch if self.args.early_stop else 0,
+            "early_best_value": early_best_value if self.args.early_stop and early_best_epoch > 0 else None,
+            "early_monitor_name": early_monitor_name if self.args.early_stop else None,
         }
         print("\nTraining complete.")
         print(f"{self.role.capitalize()} artifact: {self.output_path}")
@@ -454,6 +544,7 @@ class NativeModelTrainingRunner:
         history: list[dict[str, Any]],
         best_epoch: int,
         best_score: float | None,
+        extra: dict[str, Any] | None = None,
     ) -> None:
         assert self.dataset is not None
         assert self.model is not None
@@ -476,25 +567,25 @@ class NativeModelTrainingRunner:
                     "best_selection_score": best_score,
                     "config": self.run_config(),
                     "history": history,
+                    **(extra or {}),
                 },
             )
             save_teacher_state(path, state, framework="recdistill", model_name=self.backbone)
             return
 
-        save_student_checkpoint(
-            path,
-            {
-                "epoch": int(epoch),
-                "student_state_dict": self.model.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "history": history,
-                "config": self.run_config(),
-                "num_users": int(self.dataset.num_users),
-                "num_items": int(self.dataset.num_items),
-                "best_epoch": int(best_epoch),
-                "best_selection_score": best_score,
-            },
-        )
+        payload = {
+            "epoch": int(epoch),
+            "student_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "history": history,
+            "config": self.run_config(),
+            "num_users": int(self.dataset.num_users),
+            "num_items": int(self.dataset.num_items),
+            "best_epoch": int(best_epoch),
+            "best_selection_score": best_score,
+        }
+        payload.update(extra or {})
+        save_student_checkpoint(path, payload)
 
     def _build_teacher_scorer(self) -> PrecomputedScoresScorer | None:
         assert self.dataset is not None
@@ -544,6 +635,79 @@ class NativeModelTrainingRunner:
             row["test_ndcg"] = float(current_eval["test"]["ndcg"])
             row["test_hr"] = float(current_eval["test"]["hr"])
             row["leaked_users_test"] = int(current_eval["leaked_users_test"])
+
+    def _maybe_early_stop(
+        self,
+        *,
+        epoch: int,
+        row: dict[str, Any],
+        current_eval: dict[str, Any] | None,
+        early_best_value: float,
+        early_best_epoch: int,
+        early_bad_steps: int,
+        early_monitor_name: str,
+    ) -> dict[str, Any]:
+        if not self.args.early_stop:
+            return {
+                "best_value": early_best_value,
+                "best_epoch": early_best_epoch,
+                "bad_steps": early_bad_steps,
+                "current_value": None,
+                "improved": False,
+                "stopped": False,
+                "reason": None,
+            }
+
+        mode = str(self.args.early_stop_mode).lower()
+        if mode == "loss":
+            current_monitor_value = float(row.get("total_loss", row.get("base_loss")))
+        elif mode == "val_metric":
+            if current_eval is None:
+                return {
+                    "best_value": early_best_value,
+                    "best_epoch": early_best_epoch,
+                    "bad_steps": early_bad_steps,
+                    "current_value": None,
+                    "improved": False,
+                    "stopped": False,
+                    "reason": None,
+                }
+            current_monitor_value = float(current_eval["val"][self.args.early_stop_metric])
+        else:
+            raise ValueError("early_stopping.mode must be either 'loss' or 'val_metric'.")
+
+        if early_best_epoch == 0:
+            improved = True
+        elif mode == "loss":
+            improved = current_monitor_value < (early_best_value - float(self.args.early_stop_min_delta))
+        else:
+            improved = current_monitor_value > (early_best_value + float(self.args.early_stop_min_delta))
+
+        if improved:
+            early_best_value = current_monitor_value
+            early_best_epoch = epoch
+            early_bad_steps = 0
+        else:
+            early_bad_steps += 1
+
+        stopped = False
+        reason = None
+        if epoch >= int(self.args.early_stop_warmup) and early_bad_steps >= int(self.args.early_stop_patience):
+            stopped = True
+            reason = (
+                f"no improvement on {early_monitor_name} for {early_bad_steps} step(s); "
+                f"best={early_best_value:.6f} at epoch={early_best_epoch}"
+            )
+
+        return {
+            "best_value": early_best_value,
+            "best_epoch": early_best_epoch,
+            "bad_steps": early_bad_steps,
+            "current_value": current_monitor_value,
+            "improved": improved,
+            "stopped": stopped,
+            "reason": reason,
+        }
 
     def _print_epoch(self, epoch: int, metrics: dict[str, float], current_eval: dict[str, Any] | None) -> None:
         print(

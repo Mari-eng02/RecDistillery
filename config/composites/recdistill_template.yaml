@@ -4,6 +4,7 @@ distill_student:
 
   teacher:
     default: null
+    path: null
 
   student:
     default: null
@@ -23,5 +24,3 @@ distill_student:
   evaluation:
     default: evaluation/default.yaml
     batch_size: 1024
-
-  

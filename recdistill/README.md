@@ -109,8 +109,7 @@ or compose the config on the fly:
 ```powershell
 python scripts\recdistill\train_student_from_config.py `
   --dataset citeulike `
-  --teacher BPRMF `
-  --teacher-framework recbole `
+  --teacher-path results\teacher\<run>\artifacts\<teacher>_best.teacher `
   --distiller de `
   --student LGCN `
   --student-framework recbole
@@ -121,12 +120,10 @@ Distilled student checkpoints are saved as `.distilled_student`.
 When `--config` is omitted, the scripts compose a config from
 `config/dataset/`, `config/teacher/`, `config/student/`,
 `config/distillation/`, and `config/composites/`, then save the generated file
-under:
+as a run artifact under:
 
 ```text
-config/experiments/teacher/...
-config/experiments/student/...
-config/experiments/recdistill/...
+results/<kind>/<timestamp>_<framework>_<model>_<dataset>_<experiment_id>/config/
 ```
 
 ## Teacher Import Contract
@@ -174,8 +171,7 @@ python scripts\recdistill\import_teacher.py `
   --format predictions_json `
   --framework external `
   --model-name ExternalTeacher `
-  --dataset citeulike `
-  --embedding-dim 200
+  --dataset citeulike
 ```
 
 Import a `.pth` checkpoint with user/item embeddings:

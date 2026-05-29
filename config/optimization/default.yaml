@@ -1,12 +1,18 @@
-epochs: 10
+epochs: 300
 batch_size: 512
 learning_rate: 0.001
 l2_reg: 0.0001
-validation_rate: 10
-validation_metric: ndcg@20
+early_stopping:
+  enabled: false
+  mode: val_metric
+  metric: ndcg
+  patience: 8
+  min_delta: 0.0
+  warmup: 30
+  restore_best: true
 bayesian:
-  enabled: true
-  n_trials: 5
+  enabled: false
+  n_trials: 30
   seed: 42
   storage: sqlite:///optuna_studies.db
   metric: ndcg
@@ -26,14 +32,3 @@ bayesian:
     project: null
     entity: null
     group: null
-  early_stopping:
-    enabled: true
-    mode: val_metric
-    metric: ndcg
-    patience: 2
-    min_delta: 0.0
-    warmup: 30
-    restore_best: true
-
-
-

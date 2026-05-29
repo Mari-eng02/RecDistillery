@@ -26,7 +26,7 @@ usage() {
   echo "  bash experiments/recdistill/train_single_distiller.sh DE citeulike recbole BPRMF"
   echo "  bash experiments/recdistill/train_single_distiller.sh DE citeulike recbole BPRMF lenskit LGCN 0 1"
   echo "  bash experiments/recdistill/train_single_distiller.sh DE citeulike elliot NMF elliot SAME auto 1"
-  echo "  bash experiments/recdistill/train_single_distiller.sh RRD citeulike results/teachers/lenskit/ItemKNNScorer/citeulike/imported/lenskit_ItemKNNScorer_citeulike_200.teacher recbole BPRMF 0 1"
+  echo "  bash experiments/recdistill/train_single_distiller.sh RRD citeulike results/teacher/<run>/artifacts/<teacher>_best.teacher recbole BPRMF 0 1"
 }
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
@@ -110,20 +110,20 @@ if [ "${IMPORTED_TEACHER}" = "0" ] && [ "${STUDENT_MODEL_LC}" = "same" ]; then
   STUDENT_MODEL_LC="${TEACHER_MODEL_LC}"
 fi
 
-TEACHER_CONFIG_PATH="${REPO_ROOT}/config/models/teacher/${TEACHER_FRAMEWORK_LC}/${TEACHER_MODEL_LC}.yaml"
-STUDENT_CONFIG_PATH="${REPO_ROOT}/config/models/student/${STUDENT_FRAMEWORK_LC}/${STUDENT_MODEL_LC}.yaml"
+TEACHER_CONFIG_PATH="${REPO_ROOT}/config/teacher/${TEACHER_FRAMEWORK_LC}/${TEACHER_MODEL_LC}.yaml"
+STUDENT_CONFIG_PATH="${REPO_ROOT}/config/student/${STUDENT_FRAMEWORK_LC}/${STUDENT_MODEL_LC}.yaml"
 
 if [ "${IMPORTED_TEACHER}" = "0" ] && [ ! -f "${TEACHER_CONFIG_PATH}" ]; then
   echo "Teacher model config not found: ${TEACHER_CONFIG_PATH}"
   echo "Available teacher model configs:"
-  find "${REPO_ROOT}/config/models/teacher/${TEACHER_FRAMEWORK_LC}" -maxdepth 1 -type f -name '*.yaml' -print | sed "s#${REPO_ROOT}/##"
+  find "${REPO_ROOT}/config/teacher/${TEACHER_FRAMEWORK_LC}" -maxdepth 1 -type f -name '*.yaml' -print | sed "s#${REPO_ROOT}/##"
   exit 1
 fi
 
 if [ ! -f "${STUDENT_CONFIG_PATH}" ]; then
   echo "Student model config not found: ${STUDENT_CONFIG_PATH}"
   echo "Available student model configs:"
-  find "${REPO_ROOT}/config/models/student/${STUDENT_FRAMEWORK_LC}" -maxdepth 1 -type f -name '*.yaml' -print | sed "s#${REPO_ROOT}/##"
+  find "${REPO_ROOT}/config/student/${STUDENT_FRAMEWORK_LC}" -maxdepth 1 -type f -name '*.yaml' -print | sed "s#${REPO_ROOT}/##"
   exit 1
 fi
 
@@ -156,6 +156,31 @@ fi
 cd "${REPO_ROOT}"
 export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 
+resolve_teacher_artifact() {
+  local FW="$1"
+  local MODEL="$2"
+  local DATASET_NAME="$3"
+  python3 - "${REPO_ROOT}" "${FW}" "${MODEL}" "${DATASET_NAME}" <<'PY'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+framework = sys.argv[2].lower()
+model = sys.argv[3].lower()
+dataset = sys.argv[4].lower()
+artifacts = root.glob("results/teacher/*/artifacts/*_best.teacher")
+candidates = [
+    path
+    for path in artifacts
+    if framework in path.name.lower()
+    and model in path.name.lower()
+    and dataset in path.name.lower()
+]
+if candidates:
+    print(max(candidates, key=lambda path: path.stat().st_mtime))
+PY
+}
+
 CMD=(
   python3 scripts/recdistill/train_student_from_config.py
   --dataset "${DATASET_LC}"
@@ -167,7 +192,13 @@ CMD=(
 if [ "${IMPORTED_TEACHER}" = "1" ]; then
   CMD+=(--teacher-path "${TEACHER_PATH}")
 else
-  CMD+=(--teacher-framework "${TEACHER_FRAMEWORK_LC}" --teacher-model "${TEACHER_MODEL_LC}")
+  RESOLVED_TEACHER_PATH="$(resolve_teacher_artifact "${TEACHER_FRAMEWORK_LC}" "${TEACHER_MODEL_LC}" "${DATASET_LC}")"
+  if [ -z "${RESOLVED_TEACHER_PATH}" ]; then
+    echo "No trained teacher artifact found for ${TEACHER_FRAMEWORK_LC}/${TEACHER_MODEL_LC} on ${DATASET_LC}."
+    echo "Train the teacher first or pass an explicit results/teacher/.../*_best.teacher path."
+    exit 1
+  fi
+  CMD+=(--teacher-path "${RESOLVED_TEACHER_PATH}")
 fi
 if [ "${DRY_RUN}" = "1" ]; then
   CMD+=(--dry-run)
