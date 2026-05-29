@@ -1,26 +1,21 @@
-distill_student:
+experiment:
+  id: 001
+  name: elliot_lgcn_citeulike
+  kind: student
+
+train_student:
   dataset: citeulike
-  
-  teacher:
-    default: teacher/elliot/lgcn.yaml
-  
+
   student:
     default: student/elliot/lgcn.yaml
 
   optimization:
     default: optimization/default.yaml
     batch_size: 2048
-    
-  distillation:
-    strategy: DE
-    default: distillation/de.yaml
-  
+
   runtime:
     default: runtime/default.yaml
-    num_workers: 4
-  
+
   evaluation:
     default: evaluation/default.yaml
-    batch_size: 256
-  
-  
+    batch_size: 1024

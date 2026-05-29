@@ -18,7 +18,7 @@ from recdistill.native_runner import (
     native_args_from_config_file,
 )
 from recdistill.paths import AMAZONCD, BOOKCROSSING, BPRMF, CITEULIKE, LGCN, NMF
-from recdistill.paths import DISTILLED_STUDENT_EXT, experiment_artifact_path, experiment_id_from_config_path
+from recdistill.paths import DISTILLED_STUDENT_EXT, experiment_artifact_path, normalize_experiment_id
 from recdistill.model_validation import validate_distillation_request, validate_trainable_model
 from recdistill.training import set_seed
 
@@ -130,7 +130,7 @@ if __name__ == "__main__":
             except ValueError as exc:
                 parser.error(str(exc))
             if not config.distill_student.runtime.output_path:
-                experiment_id = experiment_id_from_config_path(experiment_path)
+                experiment_id = normalize_experiment_id(config.distill_student.runtime.output_path, config_path=experiment_path)
                 config.distill_student.runtime.output_path = str(
                     experiment_artifact_path(
                         kind="recdistill",
@@ -166,7 +166,7 @@ if __name__ == "__main__":
             )
             print(f"Generated RecDistill config saved to: {experiment_path}")
             config = load_recdistill_config_from_file(experiment_path)
-            experiment_id = experiment_id_from_config_path(experiment_path)
+            experiment_id = normalize_experiment_id(config_path=experiment_path)
             config.distill_student.runtime.output_path = str(
                 experiment_artifact_path(
                     kind="recdistill",

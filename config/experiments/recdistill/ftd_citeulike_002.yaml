@@ -1,19 +1,24 @@
+experiment:
+  id: 002
+  name: ftd_citeulike
+  kind: recdistill
+
 distill_student:
   dataset: citeulike
 
   teacher:
-    default: teacher/recbole/sgl.yaml
+    default: teacher/lenskit/bprmf.yaml
 
   student:
-    default: student/recbole/sgl.yaml
+    default: student/lenskit/bprmf.yaml
 
   optimization:
     default: optimization/default.yaml
-    batch_size: 4096
+    batch_size: 2048
 
   distillation:
-    strategy: RRD
-    default: distillation/rrd.yaml
+    strategy: FTD
+    default: distillation/ftd.yaml
 
   runtime:
     default: runtime/default.yaml
@@ -22,4 +27,5 @@ distill_student:
   evaluation:
     default: evaluation/default.yaml
     batch_size: 1024
+
   

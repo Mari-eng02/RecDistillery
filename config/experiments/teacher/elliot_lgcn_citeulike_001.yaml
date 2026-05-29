@@ -1,8 +1,13 @@
+experiment:
+  id: 001
+  name: elliot_lgcn_citeulike
+  kind: teacher
+
 train_teacher:
   dataset: citeulike
 
   teacher:
-    default: teacher/recbole/sgl.yaml
+    default: teacher/elliot/lgcn.yaml
 
   optimization:
     default: optimization/default.yaml

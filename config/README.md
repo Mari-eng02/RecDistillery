@@ -113,7 +113,7 @@ experiment ID appended to the filename.
 Generated run outputs are saved under:
 
 ```text
-results/<teacher|student|recdistill>/<timestamp>_<experiment_id>/
+results/<teacher|student|recdistill>/<timestamp>_<teacher|student|recdistill>_<experiment_id>/
 ```
 
 Each run directory contains `artifacts/`, `config/`, `logs/`, and `perf/`.

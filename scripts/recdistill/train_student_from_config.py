@@ -41,6 +41,7 @@ from recdistill.paths import (
     DISTILLED_STUDENT_EXT,
     experiment_artifact_path,
     experiment_id_from_config_path,
+    normalize_experiment_id,
 )
 from recdistill.model_validation import validate_distillation_request, validate_recdistill_config_dict
 from recdistill.tracking import resolve_wandb_logger
@@ -191,7 +192,7 @@ def _compose_imported_teacher_experiment(
 
 def _experiment_results_dir(train_conf: dict, config_path: Path) -> Path:
     del train_conf
-    experiment_id = experiment_id_from_config_path(config_path)
+    experiment_id = normalize_experiment_id(config_path=config_path)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return Path("results") / "recdistill" / f"{stamp}_{experiment_id}"
 
@@ -643,9 +644,11 @@ def main() -> None:
         config.setdefault("experiment", {})
         if isinstance(config["experiment"], dict):
             raw_meta = raw_config.get("experiment", {}) if isinstance(raw_config, dict) else {}
-            config["experiment"].setdefault("id", raw_meta.get("id") if isinstance(raw_meta, dict) else None)
-            if not config["experiment"].get("id"):
-                config["experiment"]["id"] = experiment_id_from_config_path(config_path)
+            raw_id = raw_meta.get("id") if isinstance(raw_meta, dict) else None
+            config["experiment"]["id"] = normalize_experiment_id(
+                config["experiment"].get("id") or raw_id,
+                config_path=config_path,
+            )
     else:
         args.student_framework = args.student_framework or "recbole"
         has_imported_teacher = bool(args.teacher_path)

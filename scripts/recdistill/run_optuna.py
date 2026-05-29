@@ -29,7 +29,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from scripts.recdistill.train_student_from_config import build_command
 from recdistill.config_integration import normalize_recdistill_config
-from recdistill.paths import DISTILLED_STUDENT_EXT, experiment_id_from_config_path, experiment_run_dir
+from recdistill.paths import DISTILLED_STUDENT_EXT, experiment_id_from_config_path, experiment_run_dir, normalize_experiment_id
 
 try:
     import yaml
@@ -67,7 +67,7 @@ def load_config(config_path: Path) -> dict:
     config = normalize_recdistill_config(data)
     config.setdefault("experiment", {})
     if isinstance(config["experiment"], dict):
-        config["experiment"].setdefault("id", experiment_id_from_config_path(config_path))
+        config["experiment"]["id"] = normalize_experiment_id(config["experiment"].get("id"), config_path=config_path)
     return config
 
 

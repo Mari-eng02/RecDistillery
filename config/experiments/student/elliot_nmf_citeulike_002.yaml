@@ -1,8 +1,13 @@
+experiment:
+  id: 002
+  name: elliot_nmf_citeulike
+  kind: student
+
 train_student:
   dataset: citeulike
 
   student:
-    default: student/recbole/sgl.yaml
+    default: student/elliot/nmf.yaml
 
   optimization:
     default: optimization/default.yaml

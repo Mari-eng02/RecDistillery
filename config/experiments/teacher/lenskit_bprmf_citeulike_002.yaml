@@ -1,8 +1,13 @@
-train_student:
+experiment:
+  id: 002
+  name: lenskit_bprmf_citeulike
+  kind: teacher
+
+train_teacher:
   dataset: citeulike
 
-  student:
-    default: student/elliot/nmf.yaml
+  teacher:
+    default: teacher/lenskit/bprmf.yaml
 
   optimization:
     default: optimization/default.yaml

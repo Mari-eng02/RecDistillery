@@ -1,26 +1,30 @@
+experiment:
+  id: 003
+  name: rrd_citeulike
+  kind: recdistill
+
 distill_student:
   dataset: citeulike
-  
+
   teacher:
-    default: teacher/elliot/nmf.yaml
+    default: teacher/recbole/sgl.yaml
 
   student:
-    default: student/recbole/line.yaml
-  
+    default: student/recbole/sgl.yaml
+
   optimization:
     default: optimization/default.yaml
     batch_size: 4096
-  
+
   distillation:
-    strategy: UnKD
-    default: distillation/unkd.yaml
-  
+    strategy: RRD
+    default: distillation/rrd.yaml
+
   runtime:
     default: runtime/default.yaml
     num_workers: 4
-  
+
   evaluation:
     default: evaluation/default.yaml
     batch_size: 1024
   
- 

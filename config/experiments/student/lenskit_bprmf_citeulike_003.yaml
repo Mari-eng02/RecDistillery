@@ -1,3 +1,8 @@
+experiment:
+  id: 003
+  name: lenskit_bprmf_citeulike
+  kind: student
+
 train_student:
   dataset: citeulike
 

@@ -150,7 +150,7 @@ results/
 Each experiment run is stored as:
 
 ```text
-results/<kind>/<timestamp>_<experiment_id>/
+results/<kind>/<timestamp>_<kind>_<experiment_id>/
 |-- artifacts/
 |-- config/
 |-- logs/

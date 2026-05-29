@@ -64,7 +64,7 @@ def experiment_run_dir(kind: str, experiment_id: str, *, timestamp: str | None =
     elif kind_slug in {"distill_student", "distillation"}:
         kind_slug = "recdistill"
     stamp = timestamp or timestamp_slug()
-    return RESULTS_ROOT / kind_slug / f"{stamp}_{experiment_id}"
+    return RESULTS_ROOT / kind_slug / f"{stamp}_{kind_slug}_{experiment_id}"
 
 
 def experiment_artifact_path(
@@ -81,7 +81,20 @@ def experiment_id_from_config_path(path: str | Path) -> str:
     stem = Path(path).stem
     tail = stem.rsplit("_", 1)[-1]
     is_short_hex = 6 <= len(tail) <= 16 and all(ch in "0123456789abcdefABCDEF" for ch in tail)
+    if tail.isdigit():
+        return tail.zfill(3)
     return tail if is_short_hex else stem
+
+
+def normalize_experiment_id(value: Any = None, *, config_path: str | Path | None = None) -> str:
+    if value is None or value == "":
+        if config_path is not None:
+            return experiment_id_from_config_path(config_path)
+        return new_experiment_id()
+    if isinstance(value, int):
+        return str(value).zfill(3)
+    text = str(value).strip()
+    return text.zfill(3) if text.isdigit() else text
 
 
 def dataset_directory(dataset_name: str, create_if_not_exists: bool = True) -> str:

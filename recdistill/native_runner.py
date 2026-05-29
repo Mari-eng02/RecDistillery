@@ -18,6 +18,7 @@ from recdistill.paths import (
     experiment_artifact_path,
     experiment_id_from_config_path,
     new_experiment_id,
+    normalize_experiment_id,
 )
 from recdistill.teachers.serialization import save_teacher_state
 from recdistill.teachers.state import PrecomputedScoresScorer, TeacherState
@@ -155,7 +156,7 @@ def native_args_from_config_file(
     config = raw.get("config", raw) if isinstance(raw, dict) else {}
     config = get_config_loader().resolve_config_modules(config)
     experiment_meta = config.get("experiment", {}) if isinstance(config.get("experiment", {}), dict) else {}
-    experiment_id = str(experiment_meta.get("id") or experiment_id_from_config_path(config_path))
+    experiment_id = normalize_experiment_id(experiment_meta.get("id"), config_path=config_path)
     if not isinstance(config, dict):
         train = {}
     elif _normalize_role(role) == "teacher":
