@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import random
+import os
 
 import numpy as np
+
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
 import torch
 
 from recdistill.data.interactions import InteractionDataset

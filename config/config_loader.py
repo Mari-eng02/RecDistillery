@@ -9,7 +9,12 @@ import copy
 import yaml
 from pydantic import ValidationError
 
-from recdistill.paths import new_experiment_id
+from recdistill.paths import (
+    experiment_artifact_filename,
+    experiment_run_dir,
+    new_experiment_id,
+    normalize_experiment_id,
+)
 
 from config.schemas import (
     ConfigPreset,
@@ -259,13 +264,40 @@ class ConfigLoader:
     ) -> Path:
         """Persist an on-the-fly composed config as an experiment file."""
         del path_parts
-        experiment_id = experiment_id or new_experiment_id()
-        config.setdefault("experiment", {})
-        if isinstance(config["experiment"], dict):
-            config["experiment"].setdefault("id", experiment_id)
-            config["experiment"].setdefault("name", _slug(name))
-            config["experiment"].setdefault("kind", _slug(kind))
-        experiment_path = self.root / "experiments" / _slug(kind) / f"{_slug(name)}_{experiment_id}.yaml"
+        experiment = config.get("experiment") if isinstance(config.get("experiment"), dict) else {}
+        experiment_id = normalize_experiment_id(experiment_id or experiment.get("id") or new_experiment_id())
+        kind_slug = _slug(kind)
+        framework, model, dataset = _experiment_identity(self.resolve_config_modules(config), kind_slug)
+        run_dir = experiment_run_dir(
+            kind_slug,
+            experiment_id,
+            framework=framework,
+            model=model,
+            dataset=dataset,
+        )
+        experiment.setdefault("id", experiment_id)
+        experiment.setdefault("name", _slug(name))
+        experiment.setdefault("kind", kind_slug)
+        root_key = _training_root_key(kind_slug)
+        if root_key in config and isinstance(config[root_key], dict):
+            runtime = config[root_key].setdefault("runtime", {})
+            if isinstance(runtime, dict) and not runtime.get("output_path"):
+                runtime["output_path"] = str(
+                    run_dir
+                    / "artifacts"
+                    / experiment_artifact_filename(
+                        kind=kind_slug,
+                        experiment_id=experiment_id,
+                        framework=framework,
+                        model=model,
+                        dataset=dataset,
+                    )
+                )
+        config = {
+            "experiment": experiment,
+            **{key: value for key, value in config.items() if key != "experiment"},
+        }
+        experiment_path = run_dir / "config" / f"{_slug(name)}_{experiment_id}.yaml"
         experiment_path.parent.mkdir(parents=True, exist_ok=True)
         with experiment_path.open("w", encoding="utf-8") as fp:
             yaml.safe_dump(config, fp, sort_keys=False, allow_unicode=False)
@@ -481,3 +513,44 @@ def _slug(value: Any) -> str:
 
 def _module_path(kind: str, framework: str, model: str) -> str:
     return f"{kind}/{_slug(framework)}/{_slug(model)}.yaml"
+
+
+def _training_root_key(kind: str) -> str:
+    normalized = _slug(kind)
+    if normalized == "teacher":
+        return "train_teacher"
+    if normalized == "student":
+        return "train_student"
+    if normalized in {"recdistill", "distill_student", "distillation"}:
+        return "distill_student"
+    return normalized
+
+
+def _experiment_identity(config: Dict[str, Any], kind: str) -> tuple[str, str, str]:
+    root_key = _training_root_key(kind)
+    train = config.get(root_key, {}) if isinstance(config, dict) else {}
+    if not isinstance(train, dict):
+        train = {}
+    dataset = str(train.get("dataset") or "dataset")
+    if kind == "teacher":
+        teacher = train.get("teacher", {}) if isinstance(train.get("teacher", {}), dict) else {}
+        return (
+            str(teacher.get("framework") or "auto"),
+            str(teacher.get("model") or "teacher"),
+            dataset,
+        )
+    if kind == "student":
+        student = train.get("student", {}) if isinstance(train.get("student", {}), dict) else {}
+        return (
+            str(student.get("framework") or "auto"),
+            str(student.get("backbone") or student.get("model") or "student"),
+            dataset,
+        )
+    teacher = train.get("teacher", {}) if isinstance(train.get("teacher", {}), dict) else {}
+    student = train.get("student", {}) if isinstance(train.get("student", {}), dict) else {}
+    distillation = train.get("distillation", {}) if isinstance(train.get("distillation", {}), dict) else {}
+    return (
+        str(student.get("framework") or teacher.get("framework") or "auto"),
+        f"{distillation.get('strategy') or 'recdistill'}_{student.get('backbone') or 'student'}",
+        dataset,
+    )

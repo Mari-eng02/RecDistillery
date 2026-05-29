@@ -8,6 +8,7 @@ distill_student:
   
   teacher:
     default: teacher/elliot/nmf.yaml
+    path: null
 
   student:
     default: student/recbole/line.yaml

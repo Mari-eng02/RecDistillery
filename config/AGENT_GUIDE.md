@@ -150,12 +150,21 @@ results/
 Each experiment run is stored as:
 
 ```text
-results/<kind>/<timestamp>_<kind>_<experiment_id>/
+results/<kind>/<timestamp>_<framework>_<model>_<dataset>_<experiment_id>/
 |-- artifacts/
 |-- config/
 |-- logs/
 `-- perf/
 ```
+
+Best artifacts use the same identity:
+
+```text
+results/<kind>/<run>/artifacts/<framework>_<model>_<dataset>_<experiment_id>_best.<kind_ext>
+```
+
+For `recdistill`, use the student framework and `<strategy>_<student_backbone>`
+as the model label, for example `lenskit_FTD_BPRMF_citeulike_002`.
 
 The `experiment_id` must match the ID in the generated config filename and the
 top-level `experiment.id` field when present.
@@ -204,6 +213,17 @@ Do not put `learning_rate` or `l2_reg` in student model defaults.
 
 ## Distillation Rules
 
+RecDistill experiment configs should bind the concrete teacher artifact:
+
+```yaml
+teacher:
+  default: teacher/recbole/lgcn.yaml
+  path: results/teacher/<run>/artifacts/<teacher_best>.teacher
+```
+
+`teacher.default` describes the expected teacher type. `teacher.path` selects
+the actual trained teacher artifact used by the distillation run.
+
 Use:
 
 ```yaml
@@ -234,6 +254,38 @@ Do not use `optimization.grid_search`.
 Generic Bayesian settings belong in `optimization/`.
 
 Distiller-specific search spaces belong in `distillation/<strategy>.yaml`.
+
+`scripts/recdistill/run_optuna.py` is the shared Bayesian dispatcher for all
+three experiment kinds. It reads `experiment.kind` and runs the matching
+training backend:
+
+- `teacher` -> native teacher training
+- `student` -> native student training
+- `recdistill` -> distillation training
+
+When `optimization.bayesian.enabled: true`, the standard teacher/student
+entrypoints should dispatch to this script instead of running a single fixed
+training job.
+
+Each generated Optuna study is scoped to the experiment ID by default, so trial
+numbers restart for each experiment. Use `--resume-study` only when explicitly
+continuing a previous study.
+
+During Bayesian search, keep only the validated best artifact for each trial
+(`trial_00000_best.*`) plus the promoted experiment best
+(`<framework>_<model>_<dataset>_<experiment_id>_best.*`).
+Do not keep the final non-best `trial_00000.*` artifact unless debugging a
+specific training trajectory.
+
+On-the-fly generated experiment configs are run artifacts. Save them directly
+under the run directory:
+
+```text
+results/<kind>/<timestamp>_<framework>_<model>_<dataset>_<experiment_id>/config/<name>_<experiment_id>.yaml
+```
+
+Do not also save generated configs under `config/experiments/`. Keep
+`config/experiments/` for manually authored, planned experiment specs.
 
 ## Overrides
 

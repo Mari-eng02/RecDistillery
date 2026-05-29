@@ -34,6 +34,15 @@ def resolve_teacher_adapter(source: TeacherSource) -> TeacherAdapter:
     if source.adapter:
         return _load_adapter_object(source.adapter)
 
+    checkpoint_adapter = _ADAPTERS.get("checkpoint") or _ADAPTERS.get("teacher")
+    if checkpoint_adapter is not None and source.path is not None:
+        try:
+            suffix = source.path.suffix.lower()
+        except AttributeError:
+            suffix = ""
+        if suffix == ".teacher" and checkpoint_adapter.can_load(source):
+            return checkpoint_adapter
+
     for key in (source.format, source.framework):
         normalized = _normalize(key)
         if normalized != "auto" and normalized in _ADAPTERS:

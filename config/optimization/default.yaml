@@ -1,4 +1,4 @@
-epochs: 300
+epochs: 10
 batch_size: 512
 learning_rate: 0.001
 l2_reg: 0.0001
@@ -6,7 +6,7 @@ validation_rate: 10
 validation_metric: ndcg@20
 bayesian:
   enabled: true
-  n_trials: 30
+  n_trials: 5
   seed: 42
   storage: sqlite:///optuna_studies.db
   metric: ndcg
@@ -30,7 +30,7 @@ bayesian:
     enabled: true
     mode: val_metric
     metric: ndcg
-    patience: 8
+    patience: 2
     min_delta: 0.0
     warmup: 30
     restore_best: true

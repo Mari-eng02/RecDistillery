@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 import torch
 
@@ -12,12 +15,13 @@ from recdistill.checkpointing import load_student_checkpoint, save_student_check
 from recdistill.data.datarec_loader import load_eval_split, load_train_dataset, resolve_teacher_dataset_mappings
 from recdistill.evaluation import evaluate_embeddings, evaluate_student
 from recdistill.factories import build_distiller_from_args, build_student_model, normalize_backbone_name
-from recdistill.paths import resolve_student_checkpoint_from_args, resolve_teacher_checkpoint_from_args
+from recdistill.paths import best_checkpoint_path, resolve_student_checkpoint_from_args, resolve_teacher_checkpoint_from_args
 from recdistill.paths import DISTILLED_STUDENT_EXT
 from recdistill.teachers import TeacherSource, load_teacher
 from recdistill.model_validation import validate_loaded_teacher_for_distillation
 from recdistill.tracking import utc_now_iso
 from recdistill.training import build_lightgcn_graph, build_train_loader, prepare_distiller_trainable_modules
+from recdistill.training import set_seed
 from recdistill.trainers import DistillationTrainer
 
 
@@ -234,6 +238,7 @@ class RecDistillExperimentRunner:
             )
 
     def run(self) -> dict[str, Any]:
+        set_seed(int(self.args.seed))
         self.prepare()
         return self.train()
 
@@ -257,7 +262,7 @@ class RecDistillExperimentRunner:
         history: list[dict[str, float | int]] = []
         best_score = float("-inf")
         best_epoch = 0
-        best_checkpoint = self.output_path
+        best_checkpoint = best_checkpoint_path(self.output_path)
         saved_best_checkpoint = False
         early_best_value: float | None = None
         early_best_epoch = 0

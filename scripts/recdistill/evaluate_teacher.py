@@ -283,7 +283,65 @@ def _resolve_teacher_path(model: str, dataset: str, embedding_dim: int, framewor
     return path, candidate
 
 
-def _default_output_json(dataset: str, model: str, embedding_dim: int, top_k: int, framework: str | None = None) -> Path:
+def _perf_dir_from_teacher_path(teacher_path: Path) -> Path:
+    if teacher_path.parent.name in {"artifacts", "wei"}:
+        return teacher_path.parent.parent / "perf"
+    return teacher_path.parent / "perf"
+
+
+def _path_slug(value) -> str:
+    return str(value).strip().replace(" ", "_").replace("-", "_").replace("+", "_").replace("/", "_").replace("\\", "_")
+
+
+def _experiment_id_from_artifact(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    stem = path.stem
+    if stem.endswith("_best"):
+        stem = stem[:-5]
+    return stem.rsplit("_", 1)[-1] if "_" in stem else None
+
+
+def _default_eval_filename(
+    *,
+    framework: str | None,
+    model: str,
+    dataset: str,
+    embedding_dim: int,
+    top_k: int,
+    suffix: str,
+    teacher_path: Path | None = None,
+) -> str:
+    framework_label = _path_slug(framework or "teacher")
+    experiment_id = _experiment_id_from_artifact(teacher_path)
+    stem = f"{framework_label}_{_path_slug(model)}_{_path_slug(dataset)}"
+    if experiment_id:
+        stem = f"{stem}_{experiment_id}"
+    else:
+        stem = f"{stem}_{int(embedding_dim)}"
+    return f"{stem}_eval_top{top_k}{suffix}"
+
+
+def _default_output_json(
+    dataset: str,
+    model: str,
+    embedding_dim: int,
+    top_k: int,
+    framework: str | None = None,
+    teacher_path: Path | None = None,
+) -> Path:
+    if teacher_path is not None:
+        out_dir = _perf_dir_from_teacher_path(teacher_path)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        return out_dir / _default_eval_filename(
+            framework=framework,
+            model=model,
+            dataset=dataset,
+            embedding_dim=embedding_dim,
+            top_k=top_k,
+            suffix=".json",
+            teacher_path=teacher_path,
+        )
     teacher_path = Path(
         teacher_weights_path(
             model=model,
@@ -295,10 +353,37 @@ def _default_output_json(dataset: str, model: str, embedding_dim: int, top_k: in
     )
     out_dir = teacher_path.parent.parent / "perf" if teacher_path.parent.name == "wei" else teacher_path.parent / "perf"
     out_dir.mkdir(parents=True, exist_ok=True)
-    return out_dir / f"{model}_{dataset}_{embedding_dim}_eval_top{top_k}.json"
+    return out_dir / _default_eval_filename(
+        framework=framework,
+        model=model,
+        dataset=dataset,
+        embedding_dim=embedding_dim,
+        top_k=top_k,
+        suffix=".json",
+        teacher_path=teacher_path,
+    )
 
 
-def _default_output_tsv(dataset: str, model: str, embedding_dim: int, top_k: int, framework: str | None = None) -> Path:
+def _default_output_tsv(
+    dataset: str,
+    model: str,
+    embedding_dim: int,
+    top_k: int,
+    framework: str | None = None,
+    teacher_path: Path | None = None,
+) -> Path:
+    if teacher_path is not None:
+        out_dir = _perf_dir_from_teacher_path(teacher_path)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        return out_dir / _default_eval_filename(
+            framework=framework,
+            model=model,
+            dataset=dataset,
+            embedding_dim=embedding_dim,
+            top_k=top_k,
+            suffix=".tsv",
+            teacher_path=teacher_path,
+        )
     teacher_path = Path(
         teacher_weights_path(
             model=model,
@@ -310,15 +395,23 @@ def _default_output_tsv(dataset: str, model: str, embedding_dim: int, top_k: int
     )
     out_dir = teacher_path.parent.parent / "perf" if teacher_path.parent.name == "wei" else teacher_path.parent / "perf"
     out_dir.mkdir(parents=True, exist_ok=True)
-    return out_dir / f"{model}_{dataset}_{embedding_dim}_eval_top{top_k}.tsv"
+    return out_dir / _default_eval_filename(
+        framework=framework,
+        model=model,
+        dataset=dataset,
+        embedding_dim=embedding_dim,
+        top_k=top_k,
+        suffix=".tsv",
+        teacher_path=teacher_path,
+    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate teacher model recommendation metrics.")
-    parser.add_argument("--dataset", required=True, help="Dataset name")
-    parser.add_argument("--teacher-model", "--model", dest="model", required=True, choices=["BPRMF", "LGCN", "NMF", "NFM"], help="Teacher model name")
+    parser.add_argument("--dataset", default=None, help="Dataset name")
+    parser.add_argument("--teacher-model", "--model", dest="model", default=None, choices=["BPRMF", "LGCN", "NMF", "NFM"], help="Teacher model name")
     parser.add_argument("--teacher-framework", "--framework", dest="framework", default=None, choices=["recbole", "elliot", "lenskit"], help="Framework namespace for default teacher path")
-    parser.add_argument("--embedding-dim", required=True, type=int, help="Teacher embedding dim used in filename")
+    parser.add_argument("--embedding-dim", default=None, type=int, help="Teacher embedding dim used in filename")
     parser.add_argument("--teacher-path", default=None, help="Optional explicit path to .teacher file")
     parser.add_argument("--top-k", type=int, default=20, help="Top-k recommendations for metrics")
     parser.add_argument("--batch-size", type=int, default=256, help="User batch size for ranking")
@@ -328,44 +421,63 @@ def main() -> None:
     parser.add_argument("--output-tsv", default=None, help="Optional output TSV path with summary metrics")
     args = parser.parse_args()
 
-    resolved_model = args.model.upper()
     if args.teacher_path:
         teacher_path = Path(args.teacher_path)
+        resolved_model = args.model.upper() if args.model else None
     else:
+        missing = [name for name, value in (("--dataset", args.dataset), ("--teacher-model", args.model), ("--embedding-dim", args.embedding_dim)) if value is None]
+        if missing:
+            parser.error(f"the following arguments are required when --teacher-path is not set: {', '.join(missing)}")
         teacher_path, resolved_model = _resolve_teacher_path(
             model=args.model,
             dataset=args.dataset,
             embedding_dim=args.embedding_dim,
             framework=args.framework,
         )
+    teacher_state = load_teacher_state(teacher_path, device="cpu")
+    metadata = teacher_state.metadata if isinstance(teacher_state.metadata, dict) else {}
+    dataset = args.dataset or metadata.get("dataset")
+    resolved_model = resolved_model or metadata.get("model_name") or metadata.get("model") or metadata.get("backbone")
+    embedding_dim = args.embedding_dim or metadata.get("embedding_dim") or teacher_state.embedding_dim
+    resolved_framework = args.framework or metadata.get("framework")
+    run_config = metadata.get("config") if isinstance(metadata.get("config"), dict) else {}
+    resolved_framework = resolved_framework or run_config.get("framework")
+    if dataset is None:
+        parser.error("--dataset is required because it could not be inferred from --teacher-path metadata.")
+    if resolved_model is None:
+        parser.error("--teacher-model is required because it could not be inferred from --teacher-path metadata.")
+    if embedding_dim is None:
+        parser.error("--embedding-dim is required because it could not be inferred from --teacher-path metadata.")
+    dataset = str(dataset)
+    resolved_model = str(resolved_model).upper()
+    embedding_dim = int(embedding_dim)
+
     device = torch.device(args.device) if args.device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     print("\n" + "=" * 80)
-    print(f"Evaluating teacher: {resolved_model} ({args.embedding_dim}D) on {args.dataset}")
+    print(f"Evaluating teacher: {resolved_model} ({embedding_dim}D) on {dataset}")
     if args.framework:
         print(f"Framework: {args.framework}")
     print(f"Teacher path: {teacher_path}")
     print(f"Device: {device}")
     print("=" * 80)
-
-    teacher_state = load_teacher_state(teacher_path, device="cpu")
     print(f"Teacher users/items: {teacher_state.num_users}/{teacher_state.num_items}")
 
     user_mapping, item_mapping, mapping_source = resolve_teacher_dataset_mappings(
         teacher_state.metadata,
-        dataset_name=args.dataset,
+        dataset_name=dataset,
     )
     print(f"Dataset mapping source: {mapping_source}")
 
     train_dataset, dropped_train = _build_train_dataset(
-        dataset_name=args.dataset,
+        dataset_name=dataset,
         num_users=teacher_state.num_users,
         num_items=teacher_state.num_items,
         user_mapping=user_mapping,
         item_mapping=item_mapping,
     )
     val_dict, dropped_val = _parse_split(
-        dataset_name=args.dataset,
+        dataset_name=dataset,
         split_name="val",
         num_users=teacher_state.num_users,
         num_items=teacher_state.num_items,
@@ -373,7 +485,7 @@ def main() -> None:
         item_mapping=item_mapping,
     )
     test_dict, dropped_test = _parse_split(
-        dataset_name=args.dataset,
+        dataset_name=dataset,
         split_name="test",
         num_users=teacher_state.num_users,
         num_items=teacher_state.num_items,
@@ -423,9 +535,9 @@ def main() -> None:
     print(f"Leakage users: val={val_leaks}, test={test_leaks}")
 
     result = {
-        "dataset": args.dataset,
+        "dataset": dataset,
         "model": resolved_model,
-        "embedding_dim": args.embedding_dim,
+        "embedding_dim": embedding_dim,
         "teacher_path": str(teacher_path),
         "top_k": args.top_k,
         "train_interactions": len(train_dataset.interactions),
@@ -441,11 +553,12 @@ def main() -> None:
     }
 
     output_json = Path(args.output_json) if args.output_json else _default_output_json(
-        dataset=args.dataset,
+        dataset=dataset,
         model=resolved_model,
-        embedding_dim=args.embedding_dim,
+        embedding_dim=embedding_dim,
         top_k=args.top_k,
-        framework=args.framework,
+        framework=resolved_framework,
+        teacher_path=teacher_path if args.teacher_path else None,
     )
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_json.write_text(json.dumps(result, indent=2), encoding="utf-8")
@@ -455,11 +568,12 @@ def main() -> None:
         output_tsv = Path(args.output_tsv)
     else:
         output_tsv = _default_output_tsv(
-            dataset=args.dataset,
+            dataset=dataset,
             model=resolved_model,
-            embedding_dim=args.embedding_dim,
+            embedding_dim=embedding_dim,
             top_k=args.top_k,
-            framework=args.framework,
+            framework=resolved_framework,
+            teacher_path=teacher_path if args.teacher_path else None,
         )
     output_tsv.parent.mkdir(parents=True, exist_ok=True)
     with output_tsv.open("w", encoding="utf-8") as fp:

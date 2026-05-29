@@ -12,11 +12,11 @@ import argparse
 import copy
 import csv
 import json
+import os
 import shlex
 import subprocess
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +24,8 @@ try:
     import yaml
 except ModuleNotFoundError:  # pragma: no cover - depends on environment
     yaml = None
+
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -38,9 +40,10 @@ from recdistill.config_integration import (
 )
 from recdistill.experiment_runner import RecDistillExperimentRunner
 from recdistill.paths import (
-    DISTILLED_STUDENT_EXT,
+    RESULTS_ROOT,
+    experiment_artifact_filename,
     experiment_artifact_path,
-    experiment_id_from_config_path,
+    experiment_run_dir,
     normalize_experiment_id,
 )
 from recdistill.model_validation import validate_distillation_request, validate_recdistill_config_dict
@@ -191,10 +194,29 @@ def _compose_imported_teacher_experiment(
 
 
 def _experiment_results_dir(train_conf: dict, config_path: Path) -> Path:
-    del train_conf
     experiment_id = normalize_experiment_id(config_path=config_path)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return Path("results") / "recdistill" / f"{stamp}_{experiment_id}"
+    try:
+        resolved = config_path.resolve()
+        results_root = RESULTS_ROOT.resolve()
+    except OSError:
+        resolved = config_path
+        results_root = RESULTS_ROOT
+    if resolved.parent.name == "config":
+        run_dir = resolved.parent.parent
+        try:
+            run_dir.relative_to(results_root / "recdistill")
+            return run_dir
+        except ValueError:
+            pass
+    student = train_conf.get("student", {}) if isinstance(train_conf.get("student", {}), dict) else {}
+    distillation = train_conf.get("distillation", {}) if isinstance(train_conf.get("distillation", {}), dict) else {}
+    return experiment_run_dir(
+        "recdistill",
+        experiment_id,
+        framework=str(student.get("framework") or "auto"),
+        model=f"{distillation.get('strategy') or 'recdistill'}_{student.get('backbone') or 'student'}",
+        dataset=str(train_conf.get("dataset") or "dataset"),
+    )
 
 
 def _build_run_config(
@@ -217,7 +239,16 @@ def _build_run_config(
     default_output_path = experiment_artifact_path(
         kind="recdistill",
         experiment_id=experiment_id,
-        filename=f"{experiment_id}{DISTILLED_STUDENT_EXT}",
+        framework=str((train_conf.get("student", {}) or {}).get("framework") or "auto"),
+        model=f"{(train_conf.get('distillation', {}) or {}).get('strategy') or 'recdistill'}_{(train_conf.get('student', {}) or {}).get('backbone') or 'student'}",
+        dataset=str(train_conf.get("dataset") or "dataset"),
+        filename=experiment_artifact_filename(
+            kind="recdistill",
+            experiment_id=experiment_id,
+            framework=str((train_conf.get("student", {}) or {}).get("framework") or "auto"),
+            model=f"{(train_conf.get('distillation', {}) or {}).get('strategy') or 'recdistill'}_{(train_conf.get('student', {}) or {}).get('backbone') or 'student'}",
+            dataset=str(train_conf.get("dataset") or "dataset"),
+        ),
     )
     base_output_dir = Path(output_dir or default_output_path.parent.parent)
     if create_dirs:
@@ -227,10 +258,21 @@ def _build_run_config(
         (base_output_dir / "config").mkdir(parents=True, exist_ok=True)
         (base_output_dir / "perf").mkdir(parents=True, exist_ok=True)
 
+    student_framework = str((train_conf.get("student", {}) or {}).get("framework") or "auto")
+    student_model = str((train_conf.get("student", {}) or {}).get("backbone") or "student")
+    distiller_model = str((train_conf.get("distillation", {}) or {}).get("strategy") or "recdistill")
+    dataset_label = str(train_conf.get("dataset") or "dataset")
+    default_filename = experiment_artifact_filename(
+        kind="recdistill",
+        experiment_id=experiment_id,
+        framework=student_framework,
+        model=f"{distiller_model}_{student_model}",
+        dataset=dataset_label,
+    )
     if strategy == "fixed":
-        output_path = Path(runtime_conf.get("output_path") or (base_output_dir / "artifacts" / f"{experiment_id}{DISTILLED_STUDENT_EXT}"))
+        output_path = Path(runtime_conf.get("output_path") or (base_output_dir / "artifacts" / default_filename))
     else:
-        output_path = base_output_dir / "artifacts" / f"{run_id}_{experiment_id}{DISTILLED_STUDENT_EXT}"
+        output_path = base_output_dir / "artifacts" / f"{run_id}_{default_filename}"
     existing_output_path = runtime_conf.get("output_path")
     if strategy == "fixed" and existing_output_path:
         output_path = Path(existing_output_path)
@@ -651,66 +693,40 @@ def main() -> None:
             )
     else:
         args.student_framework = args.student_framework or "recbole"
-        has_imported_teacher = bool(args.teacher_path)
         missing = [
             name
             for name, value in {
                 "--dataset": args.dataset,
-                "--teacher-path or --teacher-model": args.teacher_path or args.teacher_model,
+                "--teacher-path": args.teacher_path,
                 "--distiller": args.distiller,
-                "--student-backbone": args.student_backbone if has_imported_teacher else (args.student_backbone or args.teacher_model),
+                "--student-backbone": args.student_backbone,
             }.items()
             if not value
         ]
         if missing:
-            parser.error("--config or --dataset/--distiller plus either --teacher-path or --teacher-model is required")
-        if has_imported_teacher:
-            if args.teacher_model or args.teacher_framework:
-                parser.error("Use only --teacher-path for imported teachers; do not pass --teacher-model or --teacher-framework.")
-            try:
-                validate_distillation_request(
-                    teacher_framework=None,
-                    teacher_model=None,
-                    student_framework=args.student_framework,
-                    student_backbone=args.student_backbone,
-                    distiller=args.distiller,
-                    validate_teacher=False,
-                )
-            except ValueError as exc:
-                parser.error(str(exc))
-            config = _compose_imported_teacher_experiment(
-                dataset_name=args.dataset,
-                teacher_path=args.teacher_path,
-                distiller_strategy=args.distiller,
-                student_backbone=args.student_backbone,
+            parser.error("--config or --dataset/--teacher-path/--distiller/--student-backbone is required")
+        if args.teacher_model or args.teacher_framework:
+            parser.error("When --config is not provided, pass --teacher-path only; do not pass --teacher-model or --teacher-framework.")
+        try:
+            validate_distillation_request(
+                teacher_framework=None,
+                teacher_model=None,
                 student_framework=args.student_framework,
+                student_backbone=args.student_backbone,
+                distiller=args.distiller,
+                validate_teacher=False,
             )
-            teacher_label = Path(args.teacher_path).stem
-            teacher_framework_label = "imported"
-        else:
-            args.teacher_framework = args.teacher_framework or "recbole"
-            try:
-                validate_distillation_request(
-                    teacher_framework=args.teacher_framework,
-                    teacher_model=args.teacher_model,
-                    student_framework=args.student_framework,
-                    student_backbone=args.student_backbone or args.teacher_model,
-                    distiller=args.distiller,
-                )
-            except ValueError as exc:
-                parser.error(str(exc))
-            config = recdistill_config_to_dict(
-                load_recdistill_experiment(
-                    dataset_name=args.dataset,
-                    teacher_model=args.teacher_model,
-                    teacher_framework=args.teacher_framework,
-                    distiller_strategy=args.distiller,
-                    student_backbone=args.student_backbone,
-                    student_framework=args.student_framework,
-                )
-            )
-            teacher_label = args.teacher_model
-            teacher_framework_label = args.teacher_framework
+        except ValueError as exc:
+            parser.error(str(exc))
+        config = _compose_imported_teacher_experiment(
+            dataset_name=args.dataset,
+            teacher_path=args.teacher_path,
+            distiller_strategy=args.distiller,
+            student_backbone=args.student_backbone,
+            student_framework=args.student_framework,
+        )
+        teacher_label = Path(args.teacher_path).stem
+        teacher_framework_label = "teacher_path"
         experiment_path = get_config_loader().save_generated_experiment(
             kind="recdistill",
             name=f"{args.distiller}_{teacher_framework_label}_{teacher_label}_to_{args.student_framework}_{args.student_backbone or teacher_label}_{args.dataset}",

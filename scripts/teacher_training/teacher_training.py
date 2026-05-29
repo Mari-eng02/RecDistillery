@@ -1,6 +1,11 @@
 import argparse
+import json
+import os
+import subprocess
 import sys
 from pathlib import Path
+
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -13,6 +18,29 @@ from recdistill.native_runner import (
 from recdistill.paths import AMAZONCD, BOOKCROSSING, BPRMF, CITEULIKE, LGCN, NMF
 from recdistill.model_validation import validate_trainable_model
 from config import get_config_loader
+
+
+def _bayesian_enabled(config_path: str | Path, root_key: str) -> bool:
+    path = Path(config_path)
+    raw_text = path.read_text(encoding="utf-8")
+    if path.suffix.lower() == ".json":
+        config = json.loads(raw_text)
+    else:
+        import yaml
+
+        config = yaml.safe_load(raw_text) or {}
+    config = get_config_loader().resolve_config_modules(config)
+    train = config.get(root_key, {}) if isinstance(config, dict) else {}
+    if not isinstance(train, dict):
+        return False
+    optimization = train.get("optimization", {}) or {}
+    bayesian = optimization.get("bayesian") or train.get("bayesian") or config.get("bayesian") or {}
+    return bool(isinstance(bayesian, dict) and bayesian.get("enabled", False))
+
+
+def _run_optuna(config_path: str | Path) -> None:
+    optuna_script = REPO_ROOT / "scripts" / "recdistill" / "run_optuna.py"
+    subprocess.run([sys.executable, str(optuna_script), "--config", str(config_path)], check=True)
 
 
 if __name__ == "__main__":
@@ -90,5 +118,9 @@ if __name__ == "__main__":
             overrides=overrides,
         )
         print(f"Generated teacher config saved to: {experiment_path}")
+
+    if _bayesian_enabled(train_args.config_path, "train_teacher"):
+        _run_optuna(train_args.config_path)
+        sys.exit(0)
 
     NativeModelTrainingRunner(train_args).run()

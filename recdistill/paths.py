@@ -55,16 +55,50 @@ def timestamp_slug() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
-def experiment_run_dir(kind: str, experiment_id: str, *, timestamp: str | None = None) -> Path:
+def experiment_kind_slug(kind: str) -> str:
     kind_slug = str(kind).strip().lower()
     if kind_slug in {"teachers", "train_teacher"}:
-        kind_slug = "teacher"
-    elif kind_slug in {"students", "train_student"}:
-        kind_slug = "student"
-    elif kind_slug in {"distill_student", "distillation"}:
-        kind_slug = "recdistill"
+        return "teacher"
+    if kind_slug in {"students", "train_student"}:
+        return "student"
+    if kind_slug in {"distill_student", "distillation"}:
+        return "recdistill"
+    return kind_slug
+
+
+def experiment_run_name(
+    *,
+    kind: str,
+    experiment_id: str,
+    framework: str | None = None,
+    model: str | None = None,
+    dataset: str | None = None,
+    timestamp: str | None = None,
+) -> str:
     stamp = timestamp or timestamp_slug()
-    return RESULTS_ROOT / kind_slug / f"{stamp}_{kind_slug}_{experiment_id}"
+    if framework and model and dataset:
+        return f"{stamp}_{_path_slug(framework)}_{_path_slug(model)}_{_path_slug(dataset)}_{experiment_id}"
+    return f"{stamp}_{experiment_kind_slug(kind)}_{experiment_id}"
+
+
+def experiment_run_dir(
+    kind: str,
+    experiment_id: str,
+    *,
+    framework: str | None = None,
+    model: str | None = None,
+    dataset: str | None = None,
+    timestamp: str | None = None,
+) -> Path:
+    kind_slug = experiment_kind_slug(kind)
+    return RESULTS_ROOT / kind_slug / experiment_run_name(
+        kind=kind_slug,
+        experiment_id=experiment_id,
+        framework=framework,
+        model=model,
+        dataset=dataset,
+        timestamp=timestamp,
+    )
 
 
 def experiment_artifact_path(
@@ -72,9 +106,45 @@ def experiment_artifact_path(
     kind: str,
     experiment_id: str,
     filename: str,
+    framework: str | None = None,
+    model: str | None = None,
+    dataset: str | None = None,
     timestamp: str | None = None,
 ) -> Path:
-    return experiment_run_dir(kind, experiment_id, timestamp=timestamp) / "artifacts" / filename
+    return experiment_run_dir(
+        kind,
+        experiment_id,
+        framework=framework,
+        model=model,
+        dataset=dataset,
+        timestamp=timestamp,
+    ) / "artifacts" / filename
+
+
+def experiment_artifact_filename(
+    *,
+    kind: str,
+    experiment_id: str,
+    framework: str,
+    model: str,
+    dataset: str,
+    best: bool = False,
+) -> str:
+    stem = f"{_path_slug(framework)}_{_path_slug(model)}_{_path_slug(dataset)}_{experiment_id}"
+    if best:
+        stem = f"{stem}_best"
+    return f"{stem}{experiment_kind_ext(kind)}"
+
+
+def experiment_kind_ext(kind: str) -> str:
+    kind_slug = experiment_kind_slug(kind)
+    if kind_slug == "teacher":
+        return TEACHER_EXT
+    if kind_slug == "student":
+        return STUDENT_EXT
+    if kind_slug == "recdistill":
+        return DISTILLED_STUDENT_EXT
+    return ".pt"
 
 
 def experiment_id_from_config_path(path: str | Path) -> str:
@@ -95,6 +165,10 @@ def normalize_experiment_id(value: Any = None, *, config_path: str | Path | None
         return str(value).zfill(3)
     text = str(value).strip()
     return text.zfill(3) if text.isdigit() else text
+
+
+def _path_slug(value: Any) -> str:
+    return str(value).strip().replace(" ", "_").replace("-", "_").replace("+", "_").replace("/", "_").replace("\\", "_")
 
 
 def dataset_directory(dataset_name: str, create_if_not_exists: bool = True) -> str:
@@ -155,8 +229,21 @@ def teacher_artifact_path(
     model_name = _model_label(model)
     dataset_slug = _dataset_slug(dataset)
     experiment_id = f"{framework_slug}_{model_name.lower()}_{dataset_slug}_{int(embedding_dim)}"
-    file_name = f"{framework_slug}_{model_name}_{dataset_slug}_{int(embedding_dim)}{TEACHER_EXT}"
-    return experiment_artifact_path(kind="teacher", experiment_id=experiment_id, filename=file_name)
+    file_name = experiment_artifact_filename(
+        kind="teacher",
+        experiment_id=experiment_id,
+        framework=framework_slug,
+        model=model_name,
+        dataset=dataset_slug,
+    )
+    return experiment_artifact_path(
+        kind="teacher",
+        experiment_id=experiment_id,
+        framework=framework_slug,
+        model=model_name,
+        dataset=dataset_slug,
+        filename=file_name,
+    )
 
 
 def imported_teacher_artifact_path(
@@ -170,8 +257,21 @@ def imported_teacher_artifact_path(
     model_name = _model_label(model)
     dataset_slug = _dataset_slug(dataset)
     experiment_id = f"imported_{framework_slug}_{model_name.lower()}_{dataset_slug}_{int(embedding_dim)}"
-    file_name = f"{framework_slug}_{model_name}_{dataset_slug}_{int(embedding_dim)}{TEACHER_EXT}"
-    return experiment_artifact_path(kind="teacher", experiment_id=experiment_id, filename=file_name)
+    file_name = experiment_artifact_filename(
+        kind="teacher",
+        experiment_id=experiment_id,
+        framework=framework_slug,
+        model=model_name,
+        dataset=dataset_slug,
+    )
+    return experiment_artifact_path(
+        kind="teacher",
+        experiment_id=experiment_id,
+        framework=framework_slug,
+        model=model_name,
+        dataset=dataset_slug,
+        filename=file_name,
+    )
 
 
 def student_artifact_path(
@@ -186,8 +286,21 @@ def student_artifact_path(
     model_name = _model_label(model)
     dataset_slug = _dataset_slug(dataset)
     experiment_id = f"{framework_slug}_{model_name.lower()}_{dataset_slug}_{int(embedding_dim)}"
-    file_name = f"{framework_slug}_{model_name}_{dataset_slug}_{int(embedding_dim)}{STUDENT_EXT}"
-    return experiment_artifact_path(kind="student", experiment_id=experiment_id, filename=file_name)
+    file_name = experiment_artifact_filename(
+        kind="student",
+        experiment_id=experiment_id,
+        framework=framework_slug,
+        model=model_name,
+        dataset=dataset_slug,
+    )
+    return experiment_artifact_path(
+        kind="student",
+        experiment_id=experiment_id,
+        framework=framework_slug,
+        model=model_name,
+        dataset=dataset_slug,
+        filename=file_name,
+    )
 
 
 def distilled_student_artifact_path(
@@ -211,12 +324,22 @@ def distilled_student_artifact_path(
         f"{distiller_name}_{teacher_framework_slug}_{teacher_model_name.lower()}_"
         f"to_{student_framework_slug}_{student_model_name.lower()}_{dataset_slug}"
     )
-    file_name = (
-        f"{teacher_framework_slug}_{teacher_model_name}_"
-        f"{student_framework_slug}_{student_model_name}_"
-        f"{dataset_slug}_{int(embedding_dim)}{DISTILLED_STUDENT_EXT}"
+    model_label = f"{distiller_name}_{student_model_name}"
+    file_name = experiment_artifact_filename(
+        kind="recdistill",
+        experiment_id=experiment_id,
+        framework=student_framework_slug,
+        model=model_label,
+        dataset=dataset_slug,
     )
-    return experiment_artifact_path(kind="recdistill", experiment_id=experiment_id, filename=file_name)
+    return experiment_artifact_path(
+        kind="recdistill",
+        experiment_id=experiment_id,
+        framework=student_framework_slug,
+        model=model_label,
+        dataset=dataset_slug,
+        filename=file_name,
+    )
 
 
 def resolve_teacher_checkpoint(
@@ -234,6 +357,16 @@ def resolve_teacher_checkpoint(
         raise ValueError(
             "When teacher_path is not set, both teacher_model and teacher_embedding_dim are required."
         )
+    existing = _find_latest_teacher_artifact(
+        framework=teacher_framework,
+        model=teacher_model,
+        dataset=dataset,
+        embedding_dim=teacher_embedding_dim,
+        prefer_best=True,
+    )
+    if existing is not None:
+        return existing
+
     fixed_path = teacher_artifact_path(
         framework=teacher_framework,
         model=teacher_model,
@@ -258,7 +391,49 @@ def resolve_teacher_checkpoint(
         return imported_path
     if fixed_path.exists():
         return fixed_path
-    return best_path
+    if best_path.exists():
+        return best_path
+    raise FileNotFoundError(
+        "No teacher artifact found for "
+        f"framework={teacher_framework or 'auto'}, model={teacher_model}, "
+        f"dataset={dataset}, embedding_dim={teacher_embedding_dim}. "
+        "Set teacher.path in the distillation config or train/import the teacher first."
+    )
+
+
+def _find_latest_teacher_artifact(
+    *,
+    framework: str | None,
+    model: str,
+    dataset: str,
+    embedding_dim: int,
+    prefer_best: bool = True,
+) -> Path | None:
+    root = RESULTS_ROOT / "teacher"
+    if not root.exists():
+        return None
+
+    framework_slug = _framework_slug(framework)
+    model_name = _model_label(model)
+    dataset_slug = _dataset_slug(dataset)
+    candidates: list[Path] = []
+    for path in root.glob("*/artifacts/*.teacher"):
+        name = path.name.lower()
+        if framework_slug not in name:
+            continue
+        if model_name.lower() not in name:
+            continue
+        if dataset_slug not in name:
+            continue
+        candidates.append(path)
+
+    if not candidates:
+        return None
+    if prefer_best:
+        best_candidates = [path for path in candidates if path.stem.endswith("_best")]
+        if best_candidates:
+            candidates = best_candidates
+    return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
 def resolve_student_checkpoint(
@@ -310,8 +485,8 @@ def history_path(checkpoint_path: str | Path) -> Path:
 def best_checkpoint_path(checkpoint_path: str | Path) -> Path:
     path = Path(checkpoint_path)
     if path.suffix in {STUDENT_EXT, DISTILLED_STUDENT_EXT, TEACHER_EXT}:
-        return path.with_name(f"{path.stem}.best{path.suffix}")
-    return path.with_suffix(".best.pt")
+        return path.with_name(f"{path.stem}_best{path.suffix}")
+    return path.with_name(f"{path.stem}_best{path.suffix or '.pt'}")
 
 
 def early_stop_checkpoint_path(checkpoint_path: str | Path) -> Path:

@@ -43,6 +43,19 @@ def _plain_distiller_name(value: str | None) -> str:
     return "plain" if raw in {"none", "plain", "no", "false", "0"} else raw
 
 
+def _infer_distiller_from_config(config: dict[str, Any]) -> str | None:
+    parts: list[str] = []
+    if float(config.get("lambda_de") or 0.0) > 0.0:
+        parts.append("de")
+    if float(config.get("lambda_rrd") or 0.0) > 0.0:
+        parts.append("rrd")
+    if float(config.get("lambda_unkd") or 0.0) > 0.0:
+        parts.append("unkd")
+    if float(config.get("lambda_td") or 0.0) > 0.0:
+        parts.append(str(config.get("td_type") or "td").lower())
+    return "_".join(parts) if parts else None
+
+
 def _resolve_checkpoint_path(args: argparse.Namespace) -> Path:
     if args.path:
         return Path(args.path)
@@ -54,7 +67,7 @@ def _resolve_checkpoint_path(args: argparse.Namespace) -> Path:
 
     return resolve_student_checkpoint(
         dataset=args.dataset,
-        distiller=args.distiller,
+        distiller=args.distiller or "plain",
         teacher_model=args.teacher_model,
         teacher_framework=args.teacher_framework,
         student_backbone=args.student_backbone,
@@ -135,14 +148,46 @@ def _default_output_json(
     *,
     checkpoint_path: Path,
     dataset: str,
+    framework: str | None,
+    model: str | None,
     top_k: int,
 ) -> Path:
-    if checkpoint_path.parent.name == "wei":
+    if checkpoint_path.parent.name in {"artifacts", "wei"}:
         perf_dir = checkpoint_path.parent.parent / "perf"
     else:
         perf_dir = checkpoint_path.parent / "perf"
     perf_dir.mkdir(parents=True, exist_ok=True)
-    return perf_dir / f"{checkpoint_path.stem}_{dataset}_eval_top{top_k}.json"
+    filename = _default_eval_filename(
+        checkpoint_path=checkpoint_path,
+        dataset=dataset,
+        framework=framework,
+        model=model,
+        top_k=top_k,
+    )
+    return perf_dir / filename
+
+
+def _default_eval_filename(
+    *,
+    checkpoint_path: Path,
+    dataset: str,
+    framework: str | None,
+    model: str | None,
+    top_k: int,
+) -> str:
+    stem = checkpoint_path.stem
+    if stem.endswith("_best"):
+        stem = stem[:-5]
+    if not stem.startswith("trial_") and "_" in stem:
+        return f"{stem}_eval_top{top_k}.json"
+
+    framework_label = _path_slug(framework or "student")
+    model_label = _path_slug(model or "student")
+    return f"{framework_label}_{model_label}_{_path_slug(dataset)}_{stem}_eval_top{top_k}.json"
+
+
+def _path_slug(value: Any) -> str:
+    return str(value).strip().replace(" ", "_").replace("-", "_").replace("+", "_").replace("/", "_").replace("\\", "_")
 
 
 def _write_summary_tsv(output_tsv: Path, result: dict[str, Any]) -> None:
@@ -239,6 +284,8 @@ def evaluate_student_artifact(args: argparse.Namespace) -> Path:
         args.distiller
         or payload.get("distiller")
         or _config_value(config, "distiller", default=None)
+        or _config_value(config, "distiller_name", "distillation_strategy", default=None)
+        or _infer_distiller_from_config(config)
     )
     teacher_model = args.teacher_model or _config_value(config, "teacher_model", default=payload.get("teacher"))
 
@@ -273,6 +320,8 @@ def evaluate_student_artifact(args: argparse.Namespace) -> Path:
     output_json = Path(args.output_json) if args.output_json else _default_output_json(
         checkpoint_path=checkpoint_path,
         dataset=dataset,
+        framework=student_framework,
+        model=student_model if distiller == "plain" else f"{distiller}_{student_model}",
         top_k=int(args.top_k),
     )
     output_json.parent.mkdir(parents=True, exist_ok=True)
@@ -304,9 +353,9 @@ Examples:
     --student-embedding-dim 64
         """,
     )
-    parser.add_argument("--path", default=None, help="Explicit .student or .distilled_student artifact path")
+    parser.add_argument("--path", "--student-path", "--checkpoint", "--checkpoint-path", dest="path", default=None, help="Explicit .student or .distilled_student artifact path")
     parser.add_argument("--dataset", default=None, help="Dataset name")
-    parser.add_argument("--distiller", default="plain", help="Distiller name for path resolution; use plain for non-distilled students")
+    parser.add_argument("--distiller", default=None, help="Distiller name for path resolution; use plain for non-distilled students")
     parser.add_argument("--teacher-model", default=None, help="Teacher model used for distilled-student path resolution")
     parser.add_argument("--teacher-framework", default="recbole", choices=["recbole", "elliot", "lenskit"], help="Teacher framework used for distilled-student path resolution")
     parser.add_argument("--student-backbone", "--student-model", "--model", dest="student_backbone", default=None, help="Student backbone/model")

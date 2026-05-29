@@ -1,6 +1,11 @@
 import argparse
+import json
+import os
+import subprocess
 import sys
 from pathlib import Path
+
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -18,9 +23,32 @@ from recdistill.native_runner import (
     native_args_from_config_file,
 )
 from recdistill.paths import AMAZONCD, BOOKCROSSING, BPRMF, CITEULIKE, LGCN, NMF
-from recdistill.paths import DISTILLED_STUDENT_EXT, experiment_artifact_path, normalize_experiment_id
+from recdistill.paths import experiment_artifact_filename, experiment_artifact_path, normalize_experiment_id
 from recdistill.model_validation import validate_distillation_request, validate_trainable_model
 from recdistill.training import set_seed
+
+
+def _bayesian_enabled(config_path: str | Path, root_key: str) -> bool:
+    path = Path(config_path)
+    raw_text = path.read_text(encoding="utf-8")
+    if path.suffix.lower() == ".json":
+        config = json.loads(raw_text)
+    else:
+        import yaml
+
+        config = yaml.safe_load(raw_text) or {}
+    config = get_config_loader().resolve_config_modules(config)
+    train = config.get(root_key, {}) if isinstance(config, dict) else {}
+    if not isinstance(train, dict):
+        return False
+    optimization = train.get("optimization", {}) or {}
+    bayesian = optimization.get("bayesian") or train.get("bayesian") or config.get("bayesian") or {}
+    return bool(isinstance(bayesian, dict) and bayesian.get("enabled", False))
+
+
+def _run_optuna(config_path: str | Path) -> None:
+    optuna_script = REPO_ROOT / "scripts" / "recdistill" / "run_optuna.py"
+    subprocess.run([sys.executable, str(optuna_script), "--config", str(config_path)], check=True)
 
 
 if __name__ == "__main__":
@@ -113,6 +141,9 @@ if __name__ == "__main__":
                 overrides=overrides,
             )
             print(f"Generated student config saved to: {experiment_path}")
+        if _bayesian_enabled(train_args.config_path, "train_student"):
+            _run_optuna(train_args.config_path)
+            sys.exit(0)
         NativeModelTrainingRunner(train_args).run()
     else:
         if args.config:
@@ -135,7 +166,16 @@ if __name__ == "__main__":
                     experiment_artifact_path(
                         kind="recdistill",
                         experiment_id=experiment_id,
-                        filename=f"{experiment_id}{DISTILLED_STUDENT_EXT}",
+                        framework=config.distill_student.student.framework,
+                        model=f"{config.distill_student.distillation.strategy}_{config.distill_student.student.backbone}",
+                        dataset=config.distill_student.dataset,
+                        filename=experiment_artifact_filename(
+                            kind="recdistill",
+                            experiment_id=experiment_id,
+                            framework=config.distill_student.student.framework,
+                            model=f"{config.distill_student.distillation.strategy}_{config.distill_student.student.backbone}",
+                            dataset=config.distill_student.dataset,
+                        ),
                     )
                 )
         else:
@@ -171,7 +211,16 @@ if __name__ == "__main__":
                 experiment_artifact_path(
                     kind="recdistill",
                     experiment_id=experiment_id,
-                    filename=f"{experiment_id}{DISTILLED_STUDENT_EXT}",
+                    framework=config.distill_student.student.framework,
+                    model=f"{config.distill_student.distillation.strategy}_{config.distill_student.student.backbone}",
+                    dataset=config.distill_student.dataset,
+                    filename=experiment_artifact_filename(
+                        kind="recdistill",
+                        experiment_id=experiment_id,
+                        framework=config.distill_student.student.framework,
+                        model=f"{config.distill_student.distillation.strategy}_{config.distill_student.student.backbone}",
+                        dataset=config.distill_student.dataset,
+                    ),
                 )
             )
         if args.output_path is not None:
@@ -180,6 +229,9 @@ if __name__ == "__main__":
             config.distill_student.student.framework = args.framework
         if args.skip_eval:
             config.distill_student.evaluation.enabled = False
+        if "experiment_path" in locals() and _bayesian_enabled(experiment_path, "distill_student"):
+            _run_optuna(experiment_path)
+            sys.exit(0)
         if "experiment_path" in locals() and config.distill_student.runtime.output_path:
             output_path = Path(config.distill_student.runtime.output_path)
             run_dir = output_path.parent.parent if output_path.parent.name == "artifacts" else output_path.parent

@@ -28,9 +28,9 @@ bayesian:
       low: 0.00001
       high: 1
       log: true
-    distillation.interesting_size:
+    distillation.rrd.interesting_size:
       type: categorical
       choices: [10, 20, 30, 40, 50]
-    distillation.uninteresting_size:
+    distillation.rrd.uninteresting_size:
       type: categorical
       choices: [10, 20, 30, 40, 50]

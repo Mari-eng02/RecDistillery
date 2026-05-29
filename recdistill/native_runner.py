@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 import torch
 
@@ -15,6 +18,8 @@ from recdistill.factories import build_student_model, normalize_backbone_name, p
 from recdistill.paths import (
     STUDENT_EXT,
     TEACHER_EXT,
+    best_checkpoint_path,
+    experiment_artifact_filename,
     experiment_artifact_path,
     experiment_id_from_config_path,
     new_experiment_id,
@@ -154,9 +159,29 @@ def native_args_from_config_file(
         raw = yaml.safe_load(raw_text) or {}
 
     config = raw.get("config", raw) if isinstance(raw, dict) else {}
+    return native_args_from_config(
+        config,
+        role=role,
+        config_path=config_path,
+        fallback_dataset=fallback_dataset,
+        fallback_backbone=fallback_backbone,
+        overrides=overrides,
+    )
+
+
+def native_args_from_config(
+    config: dict[str, Any],
+    *,
+    role: str,
+    config_path: str | Path | None = None,
+    fallback_dataset: str | None = None,
+    fallback_backbone: str | None = None,
+    overrides: dict[str, Any] | None = None,
+) -> NativeTrainingArgs:
+    config_path_obj = Path(config_path) if config_path is not None else None
     config = get_config_loader().resolve_config_modules(config)
     experiment_meta = config.get("experiment", {}) if isinstance(config.get("experiment", {}), dict) else {}
-    experiment_id = normalize_experiment_id(experiment_meta.get("id"), config_path=config_path)
+    experiment_id = normalize_experiment_id(experiment_meta.get("id"), config_path=config_path_obj)
     if not isinstance(config, dict):
         train = {}
     elif _normalize_role(role) == "teacher":
@@ -172,9 +197,9 @@ def native_args_from_config_file(
     dataset = train.get("dataset") or config.get("dataset") or fallback_dataset
     backbone = model_conf.get("backbone") or model_conf.get("model") or fallback_backbone
     if dataset is None:
-        raise ValueError(f"Missing dataset in {config_path}.")
+        raise ValueError(f"Missing dataset in {config_path_obj or '<config>'}.")
     if backbone is None:
-        raise ValueError(f"Missing {model_section_name} backbone/model in {config_path}.")
+        raise ValueError(f"Missing {model_section_name} backbone/model in {config_path_obj or '<config>'}.")
 
     def _override_or_config(key: str, source: dict[str, Any], default: Any = None) -> Any:
         if overrides and key in overrides and overrides[key] is not None:
@@ -184,7 +209,7 @@ def native_args_from_config_file(
 
     embedding_dim = _override_or_config("embedding_dim", model_conf)
     if embedding_dim is None:
-        raise ValueError(f"Missing {model_section_name}.embedding_dim in {config_path}.")
+        raise ValueError(f"Missing {model_section_name}.embedding_dim in {config_path_obj or '<config>'}.")
     lightgcn_layers = _first_not_none(
         overrides.get("lightgcn_layers") if overrides else None,
         model_conf.get("lightgcn_layers"),
@@ -202,11 +227,20 @@ def native_args_from_config_file(
 
     configured_output_path = runtime_conf.get("output_path")
     if configured_output_path is None:
-        ext = TEACHER_EXT if _normalize_role(role) == "teacher" else STUDENT_EXT
+        framework = str(_override_or_config("framework", model_conf, "recbole"))
         configured_output_path = experiment_artifact_path(
             kind=role,
             experiment_id=experiment_id,
-            filename=f"{experiment_id}{ext}",
+            framework=framework,
+            model=str(backbone),
+            dataset=str(dataset),
+            filename=experiment_artifact_filename(
+                kind=role,
+                experiment_id=experiment_id,
+                framework=framework,
+                model=str(backbone),
+                dataset=str(dataset),
+            ),
         )
 
     args = NativeTrainingArgs(
@@ -235,7 +269,7 @@ def native_args_from_config_file(
         selection_split=str(eval_conf.get("selection_split", "val")),
         selection_metric=str(eval_conf.get("selection_metric", "ndcg")),
         assert_no_train_leak=bool(eval_conf.get("assert_no_train_leak", True)),
-        config_path=str(config_path),
+        config_path=str(config_path_obj) if config_path_obj is not None else None,
     )
     if overrides:
         for key, value in overrides.items():
@@ -346,7 +380,7 @@ class NativeModelTrainingRunner:
         history: list[dict[str, Any]] = []
         best_score = float("-inf")
         best_epoch = 0
-        saved_best_artifact = False
+        best_artifact = best_checkpoint_path(self.output_path)
 
         for epoch in range(1, int(self.args.epochs) + 1):
             metrics = self.trainer.train_epoch()
@@ -377,8 +411,7 @@ class NativeModelTrainingRunner:
                 if selected_score > best_score:
                     best_score = selected_score
                     best_epoch = epoch
-                    self._save_artifact(self.output_path, epoch, history + [row], best_epoch, best_score)
-                    saved_best_artifact = True
+                    self._save_artifact(best_artifact, epoch, history + [row], best_epoch, best_score)
 
             history.append(row)
             self._print_epoch(epoch, metrics, current_eval)
@@ -391,8 +424,7 @@ class NativeModelTrainingRunner:
                 self._save_artifact(periodic, epoch, history, best_epoch, best_score if best_epoch > 0 else None)
 
         final_epoch = int(history[-1]["epoch"]) if history else 0
-        if not saved_best_artifact:
-            self._save_artifact(self.output_path, final_epoch, history, best_epoch, best_score if best_epoch > 0 else None)
+        self._save_artifact(self.output_path, final_epoch, history, best_epoch, best_score if best_epoch > 0 else None)
         history_path = self.run_dir / "logs" / f"{self.output_path.stem}.history.json"
         history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
 
@@ -406,12 +438,12 @@ class NativeModelTrainingRunner:
             "history_path": str(history_path),
             "best_epoch": best_epoch,
             "best_selection_score": best_score if best_epoch > 0 else None,
-            "best_path": str(self.output_path) if best_epoch > 0 else None,
+            "best_path": str(best_artifact) if best_epoch > 0 else None,
         }
         print("\nTraining complete.")
         print(f"{self.role.capitalize()} artifact: {self.output_path}")
         if best_epoch > 0:
-            print(f"Best artifact: {self.output_path} (epoch={best_epoch}, score={best_score:.6f})")
+            print(f"Best artifact: {best_artifact} (epoch={best_epoch}, score={best_score:.6f})")
         print(f"History JSON: {history_path}\n")
         return result
 
@@ -484,11 +516,20 @@ class NativeModelTrainingRunner:
 
     def _default_output_path(self) -> Path:
         experiment_id = new_experiment_id()
-        ext = TEACHER_EXT if self.role == "teacher" else STUDENT_EXT
+        filename = experiment_artifact_filename(
+            kind=self.role,
+            experiment_id=experiment_id,
+            framework=self.args.framework,
+            model=self.backbone,
+            dataset=self.args.dataset,
+        )
         return experiment_artifact_path(
             kind=self.role,
             experiment_id=experiment_id,
-            filename=f"{experiment_id}{ext}",
+            framework=self.args.framework,
+            model=self.backbone,
+            dataset=self.args.dataset,
+            filename=filename,
         )
 
     def _update_eval_row(self, row: dict[str, Any], current_eval: dict[str, Any]) -> None:
