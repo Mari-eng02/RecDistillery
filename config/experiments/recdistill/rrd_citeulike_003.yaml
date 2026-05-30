@@ -11,7 +11,7 @@ distill_student:
     default: student/recbole/sgl.yaml
   optimization:
     default: optimization/default.yaml
-    batch_size: 4096
+    batch_size: 2048
     bayesian:
       enabled: true
     early_stopping:

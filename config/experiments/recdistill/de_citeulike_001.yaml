@@ -24,4 +24,4 @@ distill_student:
     num_workers: 4
   evaluation:
     default: evaluation/default.yaml
-    batch_size: 256
+    batch_size: 1024
