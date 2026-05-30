@@ -19,7 +19,6 @@ from typing import (
     Iterable,
     Literal,
     Optional,
-    TypeAlias,
 )
 
 import numpy as np
@@ -31,7 +30,7 @@ from ._dataset import Dataset
 from ._vocab import Vocabulary
 from .types import ID, AliasedColumn, Column, IDSequence
 
-ACTION_FIELDS: TypeAlias = Literal["ratings", "timestamps"] | str
+type ACTION_FIELDS = Literal["ratings", "timestamps"] | str
 
 _log = logging.getLogger(__name__)
 

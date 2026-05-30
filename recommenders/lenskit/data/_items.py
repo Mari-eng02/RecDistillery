@@ -24,7 +24,6 @@ from typing_extensions import (
     Any,
     Literal,
     LiteralString,
-    TypeAlias,
     overload,
 )
 
@@ -37,7 +36,7 @@ from ._mtarray import MTArray, MTGenericArray
 from ._vocab import Vocabulary
 from .types import IDArray, IDSequence, NPVector
 
-ILIndexer: TypeAlias = (
+type ILIndexer = (
     np.ndarray[tuple[int], np.dtype[np.bool_]]
     | NPVector[np.integer]
     | Sequence[int]

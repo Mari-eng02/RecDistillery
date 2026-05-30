@@ -13,19 +13,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal, TypeAlias
+from typing import Literal
 
 import numpy as np
 
 from ._items import ItemList
 from .types import ID
 
-QueryItemSource: TypeAlias = Literal["history", "session", "context"]
+type QueryItemSource = Literal["history", "session", "context"]
 """
 Valid sources for query items.
 """
 
-QueryInput: TypeAlias = RecQuery | ID | ItemList | None
+type QueryInput = RecQuery | ID | ItemList | None
 """
 Types that can be converted to a query by :meth:`RecQuery.create`.
 """

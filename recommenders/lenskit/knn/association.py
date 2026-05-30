@@ -20,11 +20,10 @@ from recommenders.lenskit.data import Dataset, ItemList, RecQuery, Vocabulary
 from recommenders.lenskit.logging import Stopwatch, get_logger
 from recommenders.lenskit.pipeline import Component
 from recommenders.lenskit.training import Trainable, TrainingOptions
-from typing import TypeAlias
 
 _log = get_logger(__name__)
 
-AssociationMethod: TypeAlias = Literal["probability", "lift"]
+type AssociationMethod = Literal["probability", "lift"]
 """
 Methods used to compute association scores.
 """

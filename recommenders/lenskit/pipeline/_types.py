@@ -13,7 +13,6 @@ from importlib import import_module
 from types import FunctionType, GenericAlias, NoneType, UnionType
 from typing import (
     Any,
-    TypeAlias,
     TypeAliasType,
     TypeVar,
     Union,
@@ -27,7 +26,7 @@ from typing_extensions import TypeForm
 
 from recommenders.lenskit.diagnostics import PipelineWarning, TypecheckWarning
 
-TypeExpr: TypeAlias = type | UnionType | TypeAliasType
+type TypeExpr = type | UnionType | TypeAliasType
 """
 Type for (resolved) type expressions.
 

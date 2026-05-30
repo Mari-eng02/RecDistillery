@@ -12,7 +12,7 @@ Pipeline runner logic.
 # pyright: reportPrivateUsage=false
 from dataclasses import dataclass
 from types import UnionType
-from typing import Any, Generic, Literal, TypeAlias, TypeVar
+from typing import Any, Literal
 
 from recommenders.lenskit._compat import structlog
 
@@ -27,7 +27,7 @@ from .nodes import ComponentInstanceNode, InputNode, LiteralNode, Node
 
 _log = get_logger(__name__)
 
-State: TypeAlias = Literal["pending", "in-progress", "finished", "failed"]
+type State = Literal["pending", "in-progress", "finished", "failed"]
 """
 Allowed states for a pipeline component.
 """
@@ -192,11 +192,8 @@ class PipelineRunner:
         return value
 
 
-T = TypeVar("T")
-
-
 @dataclass(eq=False)
-class DeferredRun(Generic[T]):
+class DeferredRun[T]:
     """
     Implementation of :class:`~lenskit.lazy.Lazy` for deferred runs in a
     pipeline runner.

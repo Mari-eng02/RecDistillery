@@ -151,7 +151,7 @@ class Pipeline:
     @overload
     def node(self, node: str, *, missing: Literal["none"] | None) -> Node[object] | None: ...
     @overload
-    def node(self, node: Node[Any]) -> Node[Any]: ...
+    def node[T](self, node: Node[T]) -> Node[T]: ...
     def node(
         self, node: str | Node[Any], *, missing: Literal["error", "none"] | None = "error"
     ) -> Node[object] | None:
@@ -384,26 +384,26 @@ class Pipeline:
     @overload
     def run(self, nodes: tuple[str, ...], /, **kwargs: object) -> tuple[object, ...]: ...
     @overload
-    def run(self, node: Node[Any], /, **kwargs: object) -> Any: ...
+    def run[T](self, node: Node[T], /, **kwargs: object) -> T: ...
     @overload
-    def run(
-        self, nodes: tuple[Node[Any], Node[Any]], /, **kwargs: object
-    ) -> tuple[Any, Any]: ...
+    def run[T1, T2](
+        self, nodes: tuple[Node[T1], Node[T2]], /, **kwargs: object
+    ) -> tuple[T1, T2]: ...
     @overload
-    def run(
-        self, nodes: tuple[Node[Any], Node[Any], Node[Any]], /, **kwargs: object
-    ) -> tuple[Any, Any, Any]: ...
+    def run[T1, T2, T3](
+        self, nodes: tuple[Node[T1], Node[T2], Node[T3]], /, **kwargs: object
+    ) -> tuple[T1, T2, T3]: ...
     @overload
-    def run(
-        self, nodes: tuple[Node[Any], Node[Any], Node[Any], Node[Any]], /, **kwargs: object
-    ) -> tuple[Any, Any, Any, Any]: ...
+    def run[T1, T2, T3, T4](
+        self, nodes: tuple[Node[T1], Node[T2], Node[T3], Node[T4]], /, **kwargs: object
+    ) -> tuple[T1, T2, T3, T4]: ...
     @overload
-    def run(
+    def run[T1, T2, T3, T4, T5](
         self,
-        nodes: tuple[Node[Any], Node[Any], Node[Any], Node[Any], Node[Any]],
+        nodes: tuple[Node[T1], Node[T2], Node[T3], Node[T4], Node[T5]],
         /,
         **kwargs: object,
-    ) -> tuple[Any, Any, Any, Any, Any]: ...
+    ) -> tuple[T1, T2, T3, T4, T5]: ...
     def run(
         self,
         nodes: str | Node[Any] | tuple[str, ...] | tuple[Node[Any], ...] | None = None,

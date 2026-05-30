@@ -18,7 +18,7 @@ from __future__ import annotations
 from abc import abstractmethod
 from collections.abc import Mapping
 from types import UnionType
-from typing import Any, Generic, TypeVar, cast
+from typing import Any, cast
 
 from pydantic import JsonValue
 
@@ -30,11 +30,8 @@ from .components import (
     component_inputs,
 )
 
-T = TypeVar("T")
-CFG = TypeVar("CFG")
 
-
-class Node(Generic[T]):
+class Node[T]:
     """
     Representation of a single node in a :class:`Pipeline`.
 
@@ -58,7 +55,7 @@ class Node(Generic[T]):
         return f"<{self.__class__.__name__} {self.name}>"
 
 
-class InputNode(Node[T], Generic[T]):
+class InputNode[T](Node[T]):
     """
     An input node.
 
@@ -79,7 +76,7 @@ class InputNode(Node[T], Generic[T]):
             self.type = type
 
 
-class LiteralNode(Node[T], Generic[T]):
+class LiteralNode[T](Node[T]):
     """
     A node storing a literal value.
 
@@ -96,7 +93,7 @@ class LiteralNode(Node[T], Generic[T]):
         self.value = value
 
 
-class ComponentNode(Node[T], Generic[T]):
+class ComponentNode[T](Node[T]):
     """
     A node storing a component.  This is an abstract node class; see subclasses
     :class:`ComponentConstructorNode` and `ComponentInstanceNode`.
@@ -106,7 +103,7 @@ class ComponentNode(Node[T], Generic[T]):
     """
 
     @staticmethod
-    def create(
+    def create[CFG](
         name: str,
         comp: ComponentConstructor[CFG, T] | Component[T] | PipelineFunction[T],
         config: CFG | Mapping[str, JsonValue] | None = None,
@@ -127,12 +124,12 @@ class ComponentNode(Node[T], Generic[T]):
         raise NotImplementedError()
 
 
-class ComponentConstructorNode(ComponentNode[T], Generic[T]):
+class ComponentConstructorNode[T](ComponentNode[T]):
     __match_args__ = ("name", "constructor", "config")
     constructor: ComponentConstructor[Any, T]
     config: object | None
 
-    def __init__(
+    def __init__[CFG](
         self, name: str, constructor: ComponentConstructor[CFG, T], config: CFG | None
     ):
         super().__init__(name)
@@ -144,7 +141,7 @@ class ComponentConstructorNode(ComponentNode[T], Generic[T]):
         return component_inputs(self.constructor)
 
 
-class ComponentInstanceNode(ComponentNode[T], Generic[T]):
+class ComponentInstanceNode[T](ComponentNode[T]):
     __match_args__ = ("name", "component")
 
     component: Component[T] | PipelineFunction[T]

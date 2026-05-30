@@ -12,31 +12,27 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from typing import Generic, TypeVar
 from typing_extensions import (
     Any,
     NamedTuple,
     Protocol,
-    TypeAlias,
     TypedDict,
 )
 
 from ..components import Component, ComponentInput, PipelineFunction
 from ..nodes import ComponentInstanceNode
 
-GenericHook: TypeAlias = Callable[..., Any]
+type GenericHook = Callable[..., Any]
 """
 Generic callable type for arbitrary hook functions.
 """
-ComponentObject: TypeAlias = Component[Any] | PipelineFunction
+type ComponentObject = Component[Any] | PipelineFunction
 """
 General type for instantiated component objects that may be passed to hooks.
 """
 
-Hook = TypeVar("Hook", bound=GenericHook)
 
-
-class HookEntry(NamedTuple, Generic[Hook]):
+class HookEntry[Hook: GenericHook](NamedTuple):
     """
     An entry in a pipeline hook list.
     """
