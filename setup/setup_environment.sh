@@ -19,7 +19,7 @@ else
     REQUIREMENTS_FILE="${SCRIPT_DIR}/requirements_cpu.txt"
 fi
 
-conda create -n distillation python=3.10 -y
+conda create -n distillation python=3.12 -y
 conda activate distillation
 
 python -m pip install --upgrade pip setuptools wheel

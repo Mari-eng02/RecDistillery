@@ -93,7 +93,7 @@ recdistill/
 
 ## Prerequisites
 
-- Python 3.10+
+- Python 3.12+
 - Conda
 - CUDA 11.8+ (recommended)
 
