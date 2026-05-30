@@ -12,12 +12,14 @@ Types and functions for lazy values.  These are used mostly for pipeline inputs.
 from __future__ import annotations
 
 from threading import Lock
-from typing import Callable, Protocol
+from typing import Callable, Generic, Protocol, TypeVar
 
 __all__ = ["Lazy", "lazy_value", "lazy_thunk"]
 
+T = TypeVar("T")
 
-class Lazy[T](Protocol):
+
+class Lazy(Protocol, Generic[T]):
     """
     Type for lazily-computed values.
 
@@ -62,7 +64,7 @@ class Lazy[T](Protocol):
         ...
 
 
-def lazy_value[T](value: T) -> Lazy[T]:
+def lazy_value(value: T) -> Lazy[T]:
     """
     Create a lazy wrapper for an already-computed value.
 
@@ -76,7 +78,7 @@ def lazy_value[T](value: T) -> Lazy[T]:
     return ConstLazy(value)
 
 
-def lazy_thunk[T](thunk: Callable[[], T]) -> Lazy[T]:
+def lazy_thunk(thunk: Callable[[], T]) -> Lazy[T]:
     """
     Create a lazy value that calls the provided function to get the value as
     needed.
@@ -91,7 +93,7 @@ def lazy_thunk[T](thunk: Callable[[], T]) -> Lazy[T]:
     return LazyThunk(thunk)
 
 
-class ConstLazy[T]:
+class ConstLazy(Generic[T]):
     _value: T
 
     def __init__(self, value: T):
@@ -101,7 +103,7 @@ class ConstLazy[T]:
         return self._value
 
 
-class LazyThunk[T]:
+class LazyThunk(Generic[T]):
     _thunk: Callable[[], T]
     _lock: Lock
     _cached: ConstLazy[T] | None = None

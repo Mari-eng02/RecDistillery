@@ -61,9 +61,9 @@ V = TypeVar("V", bound=np.number[Any], default=np.float32)
 NPMatrix: TypeAlias = np.ndarray[tuple[int, int], np.dtype[V]]
 NPVector: TypeAlias = np.ndarray[tuple[int], np.dtype[V]]
 
-type DF_FORMAT = Literal["numpy", "pandas", "torch"]
-type MAT_FORMAT = Literal["scipy", "torch", "pandas", "structure"]
-type LAYOUT = Literal["csr", "coo"]
+DF_FORMAT: TypeAlias = Literal["numpy", "pandas", "torch"]
+MAT_FORMAT: TypeAlias = Literal["scipy", "torch", "pandas", "structure"]
+LAYOUT: TypeAlias = Literal["csr", "coo"]
 
 
 @dataclass

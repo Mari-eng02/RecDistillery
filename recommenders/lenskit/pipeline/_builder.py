@@ -148,7 +148,7 @@ class PipelineBuilder:
     @overload
     def node(self, node: str, *, missing: Literal["none"] | None) -> Node[object] | None: ...
     @overload
-    def node[T](self, node: Node[T]) -> Node[T]: ...
+    def node(self, node: Node[Any]) -> Node[Any]: ...
     def node(
         self, node: str | Node[Any], *, missing: Literal["error", "none"] | None = "error"
     ) -> Node[object] | None:
@@ -189,11 +189,11 @@ class PipelineBuilder:
             return self.node(self._default)
 
     @overload
-    def create_input[T](self, name: str, *types: TypeForm[T]) -> Node[T]: ...
+    def create_input(self, name: str, *types: TypeForm[Any]) -> Node[Any]: ...
     # TODO: remove second overload when typecheckers properly implement TypeForm
     @overload
     def create_input(self, name: str, *types: Any) -> Node[Any]: ...
-    def create_input[T](self, name: str, *types: TypeForm[T] | None) -> Node[Any]:
+    def create_input(self, name: str, *types: TypeForm[Any] | None) -> Node[Any]:
         """
         Create an input node for the pipeline.  Pipelines expect their inputs to
         be provided when they are run.
@@ -241,7 +241,7 @@ class PipelineBuilder:
         self._nodes[name] = node
         return node
 
-    def literal[T](self, value: T, *, name: str | None = None) -> LiteralNode[T]:
+    def literal(self, value: Any, *, name: str | None = None) -> LiteralNode[Any]:
         """
         Create a literal node (a node with a fixed value).
 
@@ -330,30 +330,30 @@ class PipelineBuilder:
         self._aliases[alias] = node
 
     @overload
-    def add_component[CFG, T](
+    def add_component(
         self,
         name: str,
-        cls: ComponentConstructor[CFG, T],
-        config: CFG = None,
+        cls: ComponentConstructor[Any, Any],
+        config: Any = None,
         /,
         **inputs: Node[Any],
-    ) -> Node[T]: ...
+    ) -> Node[Any]: ...
     @overload
-    def add_component[T](
+    def add_component(
         self,
         name: str,
-        instance: Component[T] | PipelineFunction[T],
+        instance: Component[Any] | PipelineFunction,
         /,
         **inputs: Node[Any] | object,
-    ) -> Node[T]: ...
-    def add_component[CFG, T](
+    ) -> Node[Any]: ...
+    def add_component(
         self,
         name: str,
-        comp: ComponentConstructor[CFG, T] | Component[T] | PipelineFunction[T],
-        config: CFG | None = None,
+        comp: ComponentConstructor[Any, Any] | Component[Any] | PipelineFunction,
+        config: Any | None = None,
         /,
         **inputs: Node[Any] | object,
-    ) -> Node[T]:
+    ) -> Node[Any]:
         """
         Add a component and connect it into the graph.
 
@@ -394,30 +394,30 @@ class PipelineBuilder:
         return node
 
     @overload
-    def replace_component[CFG, T](
+    def replace_component(
         self,
-        name: str | Node[T],
-        cls: ComponentConstructor[CFG, T],
-        config: CFG = None,
+        name: str | Node[Any],
+        cls: ComponentConstructor[Any, Any],
+        config: Any = None,
         /,
         **inputs: Node[Any],
-    ) -> Node[T]: ...
+    ) -> Node[Any]: ...
     @overload
-    def replace_component[T](
+    def replace_component(
         self,
-        name: str | Node[T],
-        instance: Component[T] | PipelineFunction[T],
+        name: str | Node[Any],
+        instance: Component[Any] | PipelineFunction,
         /,
         **inputs: Node[Any] | object,
-    ) -> Node[T]: ...
-    def replace_component[CFG, T](
+    ) -> Node[Any]: ...
+    def replace_component(
         self,
-        name: str | Node[T],
-        comp: ComponentConstructor[CFG, T] | Component[T] | PipelineFunction[T],
-        config: CFG | None = None,
+        name: str | Node[Any],
+        comp: ComponentConstructor[Any, Any] | Component[Any] | PipelineFunction,
+        config: Any | None = None,
         /,
         **inputs: Node[Any] | object,
-    ) -> Node[T]:
+    ) -> Node[Any]:
         """
         Replace a component in the graph.  The new component must have a type
         that is compatible with the old component.  Both input and output connections
@@ -804,7 +804,7 @@ class PipelineBuilder:
                     "loaded pipeline config does not match hash", PipelineWarning, stacklevel=2
                 )
 
-    def use_first_of[T](self, name: str, primary: Node[T | None], fallback: Node[T]) -> Node[T]:
+    def use_first_of(self, name: str, primary: Node[Any | None], fallback: Node[Any]) -> Node[Any]:
         """
         Ergonomic method to create a new node that returns the result of its
         ``input`` if it is provided and not ``None``, and otherwise returns the
@@ -871,7 +871,7 @@ class PipelineBuilder:
             run_hooks=cast(RunHooks, self._run_hooks),
         )
 
-    def _instantiate[T](self, node: Node[T], cache: PipelineCache | None = None) -> Node[T]:
+    def _instantiate(self, node: Node[Any], cache: PipelineCache | None = None) -> Node[Any]:
         match node:
             case ComponentConstructorNode(name, constructor, config):
                 if cache is None:
