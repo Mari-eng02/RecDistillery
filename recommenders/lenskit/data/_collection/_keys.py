@@ -19,7 +19,7 @@ from typing_extensions import (
 
 from ..types import ID
 
-type GenericKey = tuple[ID, ...]
+GenericKey: TypeAlias = tuple[ID, ...]
 """
 A generic collection key with no bounds or type information.  Key types must
 also be *named* tuples (the Python type system does not allow us to express

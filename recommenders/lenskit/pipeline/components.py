@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from inspect import Parameter, isabstract, signature
 from types import FunctionType, NoneType
-from typing import TypeVar, get_args
+from typing import Generic, TypeAlias, TypeVar, get_args
 
 from pydantic import BaseModel, JsonValue, TypeAdapter
 from typing_extensions import (
@@ -34,7 +34,9 @@ from recommenders.lenskit.lazy import Lazy
 
 from ._types import TypecheckWarning, is_compatible_data
 
-type PipelineFunction[COut] = Callable[..., COut]
+COut = TypeVar("COut")
+CFG = TypeVar("CFG")
+PipelineFunction = Callable[..., COut]
 """
 Pure-function interface for pipeline functions.
 """
@@ -54,7 +56,7 @@ class ComponentInput:
 
 
 @runtime_checkable
-class ComponentConstructor[CFG, COut](Protocol):
+class ComponentConstructor(Protocol, Generic[CFG, COut]):
     """
     Protocol for component constructors.
     """
@@ -66,7 +68,7 @@ class ComponentConstructor[CFG, COut](Protocol):
     def validate_config(self, data: Any = None) -> CFG | None: ...
 
 
-class Component[COut](ABC):
+class Component(ABC, Generic[COut]):
     """
     Base class for pipeline component objects.  Any component that is not just a
     function should extend this class.
@@ -225,8 +227,8 @@ class Placeholder(Component[Any]):
         raise NotImplementedError("attempted to invoke placeholder component")
 
 
-def component_inputs[COut](
-    component: Component[COut] | ComponentConstructor[Any, COut] | PipelineFunction[COut],
+def component_inputs(
+    component: Component[Any] | ComponentConstructor[Any, Any] | PipelineFunction,
     *,
     warn_on_missing: bool = True,
     _warn_level: int = 1,
@@ -271,9 +273,9 @@ def component_inputs[COut](
     return inputs
 
 
-def component_return_type[COut](
-    component: Component[COut] | ComponentConstructor[Any, COut] | PipelineFunction[COut],
-) -> type[COut] | None:
+def component_return_type(
+    component: Component[Any] | ComponentConstructor[Any, Any] | PipelineFunction,
+) -> type[Any] | None:
     if isinstance(component, FunctionType):
         function = component
     elif hasattr(component, "__call__"):
@@ -291,7 +293,7 @@ def component_return_type[COut](
     return typ
 
 
-def fallback_on_none[T](primary: T, fallback: Lazy[T]) -> T:
+def fallback_on_none(primary: Any, fallback: Lazy[Any]) -> Any:
     """
     Fallback to a second component if the primary input is `None`.
 
