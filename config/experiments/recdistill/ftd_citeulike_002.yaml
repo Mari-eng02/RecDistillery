@@ -6,7 +6,7 @@ distill_student:
   dataset: citeulike
   teacher:
     default: teacher/lenskit/bprmf.yaml
-    path: null
+    path: results/teacher/20260530_110603_lenskit_BPRMF_citeulike_002/artifacts/lenskit_BPRMF_citeulike_002_best.teacher 
   student:
     default: student/lenskit/bprmf.yaml
   optimization:

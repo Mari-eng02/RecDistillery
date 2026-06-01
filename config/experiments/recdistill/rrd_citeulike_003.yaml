@@ -6,7 +6,7 @@ distill_student:
   dataset: citeulike
   teacher:
     default: teacher/recbole/sgl.yaml
-    path: null
+    path: results/teacher/20260530_110613_recbole_SGL_citeulike_003/artifacts/recbole_SGL_citeulike_003_best.teacher 
   student:
     default: student/recbole/sgl.yaml
   optimization:

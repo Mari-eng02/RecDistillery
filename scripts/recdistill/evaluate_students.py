@@ -254,10 +254,40 @@ def evaluate_student_artifact(args: argparse.Namespace) -> Path:
             "This usually means the artifact was trained with a different user/item indexing scheme."
         )
 
+    student_model = args.student_backbone or _config_value(config, "student_backbone", "backbone", default=payload.get("student"))
+    student_framework = args.student_framework or _config_value(config, "student_framework", "framework", default=None)
+    embedding_dim = args.student_embedding_dim or _config_value(config, "student_embedding_dim", "embedding_dim", default=None)
+    distiller = _plain_distiller_name(
+        args.distiller
+        or payload.get("distiller")
+        or _config_value(config, "distiller", default=None)
+        or _config_value(config, "distiller_name", "distillation_strategy", default=None)
+        or _infer_distiller_from_config(config)
+    )
+    teacher_model = args.teacher_model or _config_value(config, "teacher_model", default=payload.get("teacher"))
+    device = torch.device(args.device) if args.device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    dim_label = f"dim={embedding_dim}" if embedding_dim is not None else "dim=unknown"
+    distiller_label = "plain" if distiller == "plain" else distiller.upper()
+    print("\n" + "=" * 80)
+    print(f"Evaluating student: {student_model} ({dim_label}) on {dataset}")
+    if student_framework:
+        print(f"Framework: {student_framework}")
+    print(f"Distiller: {distiller_label}")
+    if teacher_model:
+        print(f"Teacher model: {teacher_model}")
+    print(f"Student path: {checkpoint_path}")
+    print(f"Device: {device}")
+    print("=" * 80)
+    print(f"Student users/items: {num_users}/{num_items}")
+    print(f"Dataset mapping source: {mapping_source or 'checkpoint/native ids'}")
+    print(f"Train interactions: {len(train_dataset.interactions)} (dropped: {dropped_train})")
+    print(f"Validation interactions: {sum(len(v) for v in val_gt.values())} (dropped: {dropped_val})")
+    print(f"Test interactions: {sum(len(v) for v in test_gt.values())} (dropped: {dropped_test})")
+
     model = _build_model(args=args, config=config, train_dataset=train_dataset)
     model.load_state_dict(payload["student_state_dict"], strict=True)
 
-    device = torch.device(args.device) if args.device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     model.eval()
 
@@ -276,18 +306,6 @@ def evaluate_student_artifact(args: argparse.Namespace) -> Path:
     test_leaks = int(metrics.get("leaked_users_test", 0))
     if args.assert_no_train_leak and (val_leaks > 0 or test_leaks > 0):
         raise RuntimeError(f"Train-item leakage detected: val={val_leaks}, test={test_leaks}")
-
-    student_model = args.student_backbone or _config_value(config, "student_backbone", "backbone", default=payload.get("student"))
-    student_framework = args.student_framework or _config_value(config, "student_framework", "framework", default=None)
-    embedding_dim = args.student_embedding_dim or _config_value(config, "student_embedding_dim", "embedding_dim", default=None)
-    distiller = _plain_distiller_name(
-        args.distiller
-        or payload.get("distiller")
-        or _config_value(config, "distiller", default=None)
-        or _config_value(config, "distiller_name", "distillation_strategy", default=None)
-        or _infer_distiller_from_config(config)
-    )
-    teacher_model = args.teacher_model or _config_value(config, "teacher_model", default=payload.get("teacher"))
 
     result = {
         "kind": "student",

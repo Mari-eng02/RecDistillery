@@ -6,7 +6,7 @@ distill_student:
   dataset: citeulike
   teacher:
     default: teacher/elliot/lgcn.yaml
-    path: null
+    path: results/teacher/20260530_110551_elliot_LGCN_citeulike_001/artifacts/elliot_LGCN_citeulike_001_best.teacher 
   student:
     default: student/elliot/lgcn.yaml
   optimization:
