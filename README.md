@@ -279,6 +279,15 @@ results/teacher/<timestamp>_<external>_<model>_<dataset>_<experiment_id>/
 `-- perf/
 ```
 
+When using it in a RecDistill config, keep the teacher model field explicit even though it is not trained internally by RecDistillery:
+
+```yaml
+distill_student:
+  teacher:
+    model: ItemKNN
+    path: results/teacher/<run>/artifacts/<teacher>_best.teacher
+```
+
 ## Teacher Training
 
 Teacher models can also be generated through the framework torch-based training pipeline. 
@@ -538,4 +547,5 @@ results/recdistill/<timestamp>_<student_framework>_<strategy>_<student_model>_<d
 |-- logs/run_recap.tsv
 `-- perf/
 ```
+
 

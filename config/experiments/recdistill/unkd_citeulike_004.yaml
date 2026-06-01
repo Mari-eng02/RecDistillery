@@ -5,7 +5,7 @@ experiment:
 distill_student:
   dataset: citeulike
   teacher:
-    default: null
+    model: ItemKNN
     path: results/teacher/20260601_165801_external_ItemKNN_citeulike_81319fc9/artifacts/external_ItemKNN_citeulike_81319fc9_best.teacher 
   student:
     default: student/elliot/nmf.yaml
