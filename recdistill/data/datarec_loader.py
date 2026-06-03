@@ -95,6 +95,7 @@ def load_train_dataset(
     teacher_num_items: int,
     user_mapping: dict[int, int] | dict[str, int] | None = None,
     item_mapping: dict[int, int] | dict[str, int] | None = None,
+    id_space: str | None = None,
 ) -> tuple[InteractionDataset, int]:
     train_dict, dropped = load_ground_truth_split(
         dataset_name=dataset_name,
@@ -103,6 +104,7 @@ def load_train_dataset(
         num_items=teacher_num_items,
         user_mapping=user_mapping,
         item_mapping=item_mapping,
+        id_space=id_space,
     )
     return (
         InteractionDataset.from_train_dict(
@@ -121,6 +123,7 @@ def load_eval_split(
     teacher_num_items: int,
     user_mapping: dict[int, int] | dict[str, int] | None = None,
     item_mapping: dict[int, int] | dict[str, int] | None = None,
+    id_space: str | None = None,
 ) -> tuple[dict[int, set[int]], int]:
     return load_ground_truth_split(
         dataset_name=dataset_name,
@@ -129,6 +132,7 @@ def load_eval_split(
         num_items=teacher_num_items,
         user_mapping=user_mapping,
         item_mapping=item_mapping,
+        id_space=id_space,
     )
 
 
@@ -138,8 +142,21 @@ def load_interaction_dataset(
     item_mapping: dict[int, int] | dict[str, int] | None = None,
     num_users: int | None = None,
     num_items: int | None = None,
+    id_space: str | None = None,
 ) -> InteractionDataset:
-    if user_mapping is None and item_mapping is None:
+    if _normalize_id_space(id_space) == "dataset_integer":
+        split, _ = _frame_to_split(
+            load_split_frame(dataset_name, "train", use_datarec=False).frame,
+            user_mapping=None,
+            item_mapping=None,
+            num_users=num_users,
+            num_items=num_items,
+        )
+        if num_users is None:
+            num_users = max(split.keys(), default=-1) + 1
+        if num_items is None:
+            num_items = max((item for items in split.values() for item in items), default=-1) + 1
+    elif user_mapping is None and item_mapping is None:
         encoded = load_encoded_dataset(dataset_name)
         if num_users is None:
             num_users = encoded.num_users
@@ -169,17 +186,30 @@ def resolve_teacher_dataset_mappings(
     metadata = metadata or {}
     user_mapping = metadata.get("public_to_local_user_id")
     item_mapping = metadata.get("public_to_local_item_id")
+    if user_mapping or item_mapping:
+        return user_mapping, item_mapping, "teacher_metadata"
+
+    id_space = _normalize_id_space(metadata.get("id_space"))
+    if id_space == "dataset_integer":
+        return None, None, "dataset_integer"
+    if id_space in {"internal_integer", "framework_integer", "local_integer"}:
+        raise ValueError(
+            f"External teacher artifact declares id_space={id_space!r}, so its user/item IDs are framework-local "
+            "indices rather than dataset-original IDs. Evaluation/training against raw dataset splits requires "
+            "public_to_local_user_id and public_to_local_item_id metadata, or a prediction export converted back "
+            "to the original user/item IDs."
+        )
+
+    framework = str(metadata.get("framework") or metadata.get("source") or "").strip().lower()
+    source_framework = str(metadata.get("import_source_framework") or "").strip().lower()
+    if framework == "external" or source_framework == "external":
+        raise ValueError(
+            "External teacher artifacts must define either public_to_local_user_id/public_to_local_item_id "
+            "metadata or id_space='dataset_integer'. Refusing to evaluate with an implicit DataRec re-encoding."
+        )
+
     if not user_mapping and not item_mapping:
         return None, None, "datarec"
-
-    if (
-        _looks_like_identity_mapping(user_mapping)
-        and _looks_like_identity_mapping(item_mapping)
-        and _dataset_has_sparse_numeric_ids(dataset_name)
-    ):
-        return None, None, "datarec_identity_teacher_mapping_ignored"
-
-    return user_mapping, item_mapping, "teacher_metadata"
 
 
 def load_ground_truth_split(
@@ -189,7 +219,18 @@ def load_ground_truth_split(
     num_items: int | None = None,
     user_mapping: dict[int, int] | dict[str, int] | None = None,
     item_mapping: dict[int, int] | dict[str, int] | None = None,
+    id_space: str | None = None,
 ) -> tuple[dict[int, set[int]], int]:
+    if _normalize_id_space(id_space) == "dataset_integer":
+        loaded = load_split_frame(dataset_name, split_name, use_datarec=False)
+        return _frame_to_split(
+            loaded.frame,
+            user_mapping=None,
+            item_mapping=None,
+            num_users=num_users,
+            num_items=num_items,
+        )
+
     if user_mapping is None and item_mapping is None:
         encoded = load_encoded_dataset(dataset_name)
         normalized_split = "val" if split_name == "validation" else split_name
@@ -380,6 +421,10 @@ def _resolve_or_encode(
     if key not in encoder:
         encoder[key] = len(encoder)
     return encoder[key]
+
+
+def _normalize_id_space(value: Any) -> str:
+    return str(value or "").strip().lower().replace("-", "_")
 
 
 def _looks_like_identity_mapping(mapping: Any) -> bool:

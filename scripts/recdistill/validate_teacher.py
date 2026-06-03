@@ -97,11 +97,17 @@ except ModuleNotFoundError as exc:
         raise
 
 
-def _load_dataset(dataset_name: str, user_mapping: dict | None, item_mapping: dict | None) -> InteractionDataset:
+def _load_dataset(
+    dataset_name: str,
+    user_mapping: dict | None,
+    item_mapping: dict | None,
+    id_space: str | None,
+) -> InteractionDataset:
     return load_interaction_dataset(
         dataset_name=dataset_name,
         user_mapping=user_mapping,
         item_mapping=item_mapping,
+        id_space=id_space,
     )
 
 
@@ -208,11 +214,18 @@ def validate_teacher(
 
     # Load dataset
     print("\n[2/3] Loading dataset...")
+    user_mapping, item_mapping, mapping_source = resolve_teacher_dataset_mappings(
+        teacher_state.metadata,
+        dataset_name=dataset_name,
+    )
+    split_id_space = "dataset_integer" if mapping_source == "dataset_integer" else None
     dataset = _load_dataset(
         dataset_name=dataset_name,
-        user_mapping=teacher_state.metadata.get("public_to_local_user_id"),
-        item_mapping=teacher_state.metadata.get("public_to_local_item_id"),
+        user_mapping=user_mapping,
+        item_mapping=item_mapping,
+        id_space=split_id_space,
     )
+    print(f"  Dataset mapping source: {mapping_source}")
     print(f"  ✓ Dataset users: {dataset.num_users}")
     print(f"  ✓ Dataset items: {dataset.num_items}")
     print(f"  ✓ Dataset interactions: {len(dataset.interactions)}")

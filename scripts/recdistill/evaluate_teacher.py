@@ -102,6 +102,7 @@ def _parse_split(
     num_items: int,
     user_mapping: dict[int, int] | None = None,
     item_mapping: dict[int, int] | None = None,
+    id_space: str | None = None,
 ) -> tuple[dict[int, set[int]], int]:
     return _load_eval_split_datarec(
         dataset_name=dataset_name,
@@ -110,6 +111,7 @@ def _parse_split(
         teacher_num_items=num_items,
         user_mapping=user_mapping,
         item_mapping=item_mapping,
+        id_space=id_space,
     )
 
 
@@ -119,6 +121,7 @@ def _build_train_dataset(
     num_items: int,
     user_mapping: dict[int, int] | None = None,
     item_mapping: dict[int, int] | None = None,
+    id_space: str | None = None,
 ) -> tuple[InteractionDataset, int]:
     return _load_train_dataset_datarec(
         dataset_name=dataset_name,
@@ -126,6 +129,7 @@ def _build_train_dataset(
         teacher_num_items=num_items,
         user_mapping=user_mapping,
         item_mapping=item_mapping,
+        id_space=id_space,
     )
 
 
@@ -488,6 +492,7 @@ def main() -> None:
         teacher_state.metadata,
         dataset_name=dataset,
     )
+    split_id_space = "dataset_integer" if mapping_source == "dataset_integer" else None
     print(f"Dataset mapping source: {mapping_source}")
 
     train_dataset, dropped_train = _build_train_dataset(
@@ -496,6 +501,7 @@ def main() -> None:
         num_items=teacher_state.num_items,
         user_mapping=user_mapping,
         item_mapping=item_mapping,
+        id_space=split_id_space,
     )
     val_dict, dropped_val = _parse_split(
         dataset_name=dataset,
@@ -504,6 +510,7 @@ def main() -> None:
         num_items=teacher_state.num_items,
         user_mapping=user_mapping,
         item_mapping=item_mapping,
+        id_space=split_id_space,
     )
     test_dict, dropped_test = _parse_split(
         dataset_name=dataset,
@@ -512,6 +519,7 @@ def main() -> None:
         num_items=teacher_state.num_items,
         user_mapping=user_mapping,
         item_mapping=item_mapping,
+        id_space=split_id_space,
     )
 
     print(f"Train interactions: {len(train_dataset.interactions)} (dropped: {dropped_train})")
@@ -562,6 +570,7 @@ def main() -> None:
         "model": resolved_model,
         "embedding_dim": embedding_dim,
         "teacher_path": str(teacher_path),
+        "dataset_mapping_source": mapping_source,
         "top_k": args.top_k,
         "train_interactions": len(train_dataset.interactions),
         "val_interactions": int(sum(len(v) for v in val_dict.values())),

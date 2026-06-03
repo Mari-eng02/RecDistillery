@@ -148,6 +148,7 @@ class RecDistillExperimentRunner:
             teacher_state.metadata,
             dataset_name=self.args.dataset,
         )
+        split_id_space = "dataset_integer" if mapping_source == "dataset_integer" else None
         print(f"Dataset mapping source: {mapping_source}")
         self.dataset, dropped = load_train_dataset(
             dataset_name=self.args.dataset,
@@ -155,6 +156,7 @@ class RecDistillExperimentRunner:
             teacher_num_items=teacher_state.num_items,
             user_mapping=user_mapping,
             item_mapping=item_mapping,
+            id_space=split_id_space,
         )
         print(f"Train interactions: {len(self.dataset.interactions)}")
         print(f"Dropped interactions (out of teacher range): {dropped}")
@@ -167,6 +169,7 @@ class RecDistillExperimentRunner:
                 teacher_num_items=teacher_state.num_items,
                 user_mapping=user_mapping,
                 item_mapping=item_mapping,
+                id_space=split_id_space,
             )
             self.test_dict, dropped_test = load_eval_split(
                 dataset_name=self.args.dataset,
@@ -175,6 +178,7 @@ class RecDistillExperimentRunner:
                 teacher_num_items=teacher_state.num_items,
                 user_mapping=user_mapping,
                 item_mapping=item_mapping,
+                id_space=split_id_space,
             )
             print(f"Validation interactions: {sum(len(v) for v in self.val_dict.values())} (dropped: {dropped_val})")
             print(f"Test interactions: {sum(len(v) for v in self.test_dict.values())} (dropped: {dropped_test})")

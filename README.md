@@ -75,10 +75,12 @@ recdistill/
   samplers/              Negative and distillation samplers
   trainers/              Training loops and optimization helpers
   framework_backbone.py  Framework adapter and model registry
+  factories.py           Builders for student models, distillers, and backbone aliases
   config_integration.py  RecDistill config composition and loading
   experiment_runner.py   RecDistillExperimentRunner
   native_runner.py       Native teacher/student model training runner
   checkpointing.py       Teacher/student checkpoint management
+  evaluation.py          Shared top-k metrics used by student evaluation and training runners
   model_validation.py    Compatibility and request validation
   supported_models.py    Torch-compatible model registry
   training.py            Shared training utilities
@@ -105,7 +107,7 @@ Optional:
 
 ```bash
 git clone <REPO_URL>
-cd RecSys-Distillation
+cd RecDistillery
 ```
 
 ## Configure The Environment
@@ -138,7 +140,7 @@ This activates the default `distillation` environment and sets the project `PYTH
 
 ## Download and Prepare Datasets
 
-Expected datasets are:
+RecDistillery provides, as an example, ready-to-use data preparation scripts for three datasets:
 
 - Amazon-CD
 - BookCrossing
@@ -269,6 +271,8 @@ python scripts/recdistill/import_teacher.py \
   --dataset citeulike
 ```
 
+External prediction exports must use a clear ID space. If `user` and `item`are the same IDs used in `data/<dataset>/*.tsv`, the import can be evaluated as `id_space=dataset_integer`. If they are framework-internal indices, export the framework mapping and include `public_to_local_user_id` and `public_to_local_item_id` metadata, or convert the predictions back to original dataset IDs before import. Embedding checkpoints usually contain internal embedding rows, so they need the same mapping to be evaluated against raw dataset splits.
+
 Imported teachers are saved as tracked teacher runs:
 
 ```text
@@ -366,9 +370,8 @@ python scripts/recdistill/train_student_from_config.py \
   --config config/experiments/recdistill/de_citeulike_001.yaml
 ```
 
-When `--config` is omitted, pass an explicit teacher artifact path. Do not pass
-`--teacher-model` or `--teacher-framework`; those are reserved for complete
-configs and native teacher training.
+When `--config` is omitted, pass an explicit teacher artifact path. Do not pass `--teacher-model` or `--teacher-framework`; 
+those are reserved for complete configs and native teacher training.
 
 ```bash
 python scripts/recdistill/train_student_from_config.py \
@@ -444,16 +447,13 @@ config/experiments/student/
 config/experiments/recdistill/
 ```
 
-Manually planned experiments live there. On-the-fly generated configs are saved
-as run artifacts under `results/<kind>/<run>/config/`, not duplicated back into
-`config/experiments/`.
+Manually planned experiments live there. On-the-fly generated configs are saved as run artifacts under `results/<kind>/<run>/config/`.
 
 ---
 
 # Evaluation
 
-The evaluation in RecDistillery is done as a top-k ranking, typically @20. 
-During student training, the pipeline calculates the top-k recommendations, compares them with the validation/test ground truth, calculates precision, recall, ndcg, and hr and finally saves the best artifact using val.ndcg as selection metric.
+The evaluation in RecDistillery is done as a top-k ranking, typically @20. During student training, the pipeline calculates the top-k recommendations, compares them with the validation/test ground truth, calculates precision, recall, ndcg, and hr and finally saves the best artifact using val.ndcg as selection metric.
 
 The formulas are implemented here: `recdistill/evaluation.py`. Then the metrics are averaged across evaluable users.
 
@@ -513,7 +513,7 @@ results/<kind>/<run>/artifacts/<framework>_<model>_<dataset>_<experiment_id>_bes
 For `recdistill`, the model label is `<strategy>_<student_backbone>`, for example:
 
 ```text
-results/recdistill/20260529_120251_elliot_DE_LGCN_citeulike_001/artifacts/elliot_DE_LGCN_citeulike_001_best.distilled_student
+results/recdistill/<timestamp>_elliot_DE_LGCN_citeulike_<experiment_id>/artifacts/elliot_DE_LGCN_citeulike_<experiment_id>_best.distilled_student
 ```
 
 Bayesian runs additionally save `logs/best_trial.json`, `logs/optuna_trials.json`, `logs/optuna_runtime_records.json`, and

@@ -110,7 +110,13 @@ def _topk_scorer_from_integer_rows(
     )
     metadata = {
         "representation": "topk",
-        "id_space": "dataset_integer",
+        "id_space": _infer_integer_id_space(
+            source_metadata=source_metadata,
+            user_values=user_values,
+            item_values=item_values,
+            num_users=num_users,
+            num_items=num_items,
+        ),
         "num_users": num_users,
         "num_items": num_items,
         "top_k": top_k,
@@ -195,6 +201,63 @@ def _metadata_positive_int(metadata: dict[str, Any], key: str) -> int | None:
         return None
     parsed = int(value)
     return parsed if parsed > 0 else None
+
+
+def _infer_integer_id_space(
+    *,
+    source_metadata: dict[str, Any],
+    user_values: list[int],
+    item_values: list[int],
+    num_users: int,
+    num_items: int,
+) -> str:
+    explicit = source_metadata.get("id_space")
+    if explicit is not None:
+        return str(explicit)
+
+    dataset_name = source_metadata.get("dataset")
+    if not dataset_name:
+        return "dataset_integer"
+
+    raw_num_users, raw_num_items = _raw_numeric_shape_from_splits(str(dataset_name))
+    if raw_num_users is None or raw_num_items is None:
+        return "dataset_integer"
+
+    rows_fit_dense_shape = (max(user_values) + 1 <= num_users) and (max(item_values) + 1 <= num_items)
+    raw_space_is_larger = raw_num_users > num_users or raw_num_items > num_items
+    if rows_fit_dense_shape and raw_space_is_larger:
+        return "internal_integer"
+
+    return "dataset_integer"
+
+
+def _raw_numeric_shape_from_splits(dataset_name: str) -> tuple[int | None, int | None]:
+    try:
+        from recdistill.data.datarec_loader import ITEM_COLUMNS, SPLIT_ORDER, USER_COLUMNS, _pick_column, load_split_frame
+    except Exception:
+        return None, None
+
+    max_user = -1
+    max_item = -1
+    for split_name in SPLIT_ORDER:
+        try:
+            frame = load_split_frame(dataset_name, split_name, use_datarec=False).frame
+            user_col = _pick_column(frame.columns, USER_COLUMNS)
+            item_col = _pick_column(frame.columns, ITEM_COLUMNS)
+        except Exception:
+            continue
+        for user_raw, item_raw in frame[[user_col, item_col]].itertuples(index=False, name=None):
+            try:
+                user = int(user_raw)
+                item = int(item_raw)
+            except (TypeError, ValueError):
+                return None, None
+            max_user = max(max_user, user)
+            max_item = max(max_item, item)
+
+    if max_user < 0 or max_item < 0:
+        return None, None
+    return max_user + 1, max_item + 1
 
 
 def _row_rank(row: dict[str, Any], fallback: int) -> float:

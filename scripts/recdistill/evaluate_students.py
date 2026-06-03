@@ -92,17 +92,18 @@ def _resolve_teacher_path(config: dict[str, Any], payload: dict[str, Any]) -> Pa
     return path if path.exists() else None
 
 
-def _load_mappings(config: dict[str, Any], payload: dict[str, Any]) -> tuple[dict | None, dict | None, str | None]:
+def _load_mappings(config: dict[str, Any], payload: dict[str, Any]) -> tuple[dict | None, dict | None, str | None, str | None]:
     teacher_path = _resolve_teacher_path(config, payload)
     if teacher_path is None:
-        return None, None, None
+        return None, None, None, None
 
     teacher_state = load_teacher_state(teacher_path, device="cpu")
     user_mapping, item_mapping, mapping_source = resolve_teacher_dataset_mappings(
         teacher_state.metadata,
         dataset_name=str(config.get("dataset") or payload.get("dataset") or ""),
     )
-    return user_mapping, item_mapping, f"{teacher_path} ({mapping_source})"
+    split_id_space = "dataset_integer" if mapping_source == "dataset_integer" else None
+    return user_mapping, item_mapping, split_id_space, f"{teacher_path} ({mapping_source})"
 
 
 def _build_model(
@@ -220,7 +221,7 @@ def evaluate_student_artifact(args: argparse.Namespace) -> Path:
     config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
     dataset = _resolve_dataset(args, config, payload)
 
-    user_mapping, item_mapping, mapping_source = _load_mappings(config, payload)
+    user_mapping, item_mapping, split_id_space, mapping_source = _load_mappings(config, payload)
     num_users = int(payload["num_users"])
     num_items = int(payload["num_items"])
 
@@ -230,6 +231,7 @@ def evaluate_student_artifact(args: argparse.Namespace) -> Path:
         teacher_num_items=num_items,
         user_mapping=user_mapping,
         item_mapping=item_mapping,
+        id_space=split_id_space,
     )
     val_gt, dropped_val = load_eval_split(
         dataset_name=dataset,
@@ -238,6 +240,7 @@ def evaluate_student_artifact(args: argparse.Namespace) -> Path:
         teacher_num_items=num_items,
         user_mapping=user_mapping,
         item_mapping=item_mapping,
+        id_space=split_id_space,
     )
     test_gt, dropped_test = load_eval_split(
         dataset_name=dataset,
@@ -246,6 +249,7 @@ def evaluate_student_artifact(args: argparse.Namespace) -> Path:
         teacher_num_items=num_items,
         user_mapping=user_mapping,
         item_mapping=item_mapping,
+        id_space=split_id_space,
     )
     if dropped_train or dropped_val or dropped_test:
         raise RuntimeError(

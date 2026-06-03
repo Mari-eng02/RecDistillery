@@ -95,11 +95,17 @@ except ModuleNotFoundError as exc:
         raise
 
 
-def _load_dataset(dataset_name: str, user_mapping: dict | None, item_mapping: dict | None) -> InteractionDataset:
+def _load_dataset(
+    dataset_name: str,
+    user_mapping: dict | None,
+    item_mapping: dict | None,
+    id_space: str | None,
+) -> InteractionDataset:
     return load_interaction_dataset(
         dataset_name=dataset_name,
         user_mapping=user_mapping,
         item_mapping=item_mapping,
+        id_space=id_space,
     )
 
 
@@ -135,11 +141,13 @@ def main() -> None:
         teacher_state.metadata,
         dataset_name=args.dataset,
     )
+    split_id_space = "dataset_integer" if mapping_source == "dataset_integer" else None
     print(f"  Dataset mapping source: {mapping_source}")
     dataset = _load_dataset(
         dataset_name=args.dataset,
         user_mapping=user_mapping,
         item_mapping=item_mapping,
+        id_space=split_id_space,
     )
     print(f"  ✓ Dataset: {dataset.num_users} users × {dataset.num_items} items")
     print(f"  ✓ Interactions: {len(dataset.interactions)}")

@@ -82,11 +82,17 @@ except ModuleNotFoundError as exc:
         raise
 
 
-def _load_dataset(dataset_name: str, user_mapping: dict | None, item_mapping: dict | None) -> InteractionDataset:
+def _load_dataset(
+    dataset_name: str,
+    user_mapping: dict | None,
+    item_mapping: dict | None,
+    id_space: str | None,
+) -> InteractionDataset:
     return load_interaction_dataset(
         dataset_name=dataset_name,
         user_mapping=user_mapping,
         item_mapping=item_mapping,
+        id_space=id_space,
     )
 
 
@@ -110,14 +116,16 @@ def main() -> None:
     )
     state = load_teacher_state(teacher_path)
 
-    user_mapping, item_mapping, _mapping_source = resolve_teacher_dataset_mappings(
+    user_mapping, item_mapping, mapping_source = resolve_teacher_dataset_mappings(
         state.metadata,
         dataset_name=args.dataset,
     )
+    split_id_space = "dataset_integer" if mapping_source == "dataset_integer" else None
     dataset = _load_dataset(
         dataset_name=args.dataset,
         user_mapping=user_mapping,
         item_mapping=item_mapping,
+        id_space=split_id_space,
     )
     provider = TeacherTopKProvider(top_k=args.top_k)
     teacher_topk = provider.build(teacher_state=state, dataset=dataset)
@@ -132,6 +140,7 @@ def main() -> None:
         "num_items": state.num_items,
         "teacher_embedding_dim": state.embedding_dim if state.has_embeddings else None,
         "dataset_interactions": len(dataset.interactions),
+        "dataset_mapping_source": mapping_source,
         "top_k": args.top_k,
         "sample_topk": {str(user): teacher_topk[user][: min(5, len(teacher_topk[user]))] for user in sample_users},
         "teacher_metadata_keys": sorted(state.metadata.keys()),
