@@ -35,6 +35,8 @@ RecDistill trains only this subset exposed through PyTorch adapters:
   - BPRMF (aliases: BPRMF)
   - LGCN (aliases: LGCN, LightGCN)
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sisinflab/RecDistillery/blob/main/recdistillery.ipynb)
+
 The dataset preprocessing and standardized data management are based on `DataRec`:
 - DataRec Documentation: https://www.datarechub.com/
 - DataRec Datasets: https://www.datarechub.com/datasets_nav/

@@ -1,0 +1,31 @@
+[
+    {
+        "default_validation_metric": "ndcg",
+        "default_validation_cutoff": 20,
+        "rel_threshold": 0
+    },
+    {
+        "meta": {
+            "verbose": true,
+            "save_recs": true,
+            "validation_metric": "nDCG@20",
+            "hyper_max_evals": 30,
+            "hyper_opt_alg": "tpe",
+            "validation_rate": 1
+        },
+        "recommender": "ItemKNN_nn=998_sim=cosine_imp=standard_bin=False_shrink=0_norm=True_asymalpha=_tvalpha=_tvbeta=_rweights=",
+        "configuration": {
+            "epochs": 300,
+            "early_stopping": {
+                "patience": 8,
+                "monitor": "nDCG@20",
+                "mode": "max",
+                "verbose": true
+            },
+            "neighbors": 998.5464874522173,
+            "similarity": "cosine",
+            "implementation": "standard",
+            "name": "ItemKNN_nn=998_sim=cosine_imp=standard_bin=False_shrink=0_norm=True_asymalpha=_tvalpha=_tvbeta=_rweights="
+        }
+    }
+]

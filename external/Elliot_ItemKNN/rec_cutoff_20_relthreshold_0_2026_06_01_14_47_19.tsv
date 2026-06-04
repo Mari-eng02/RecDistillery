@@ -1,0 +1,2 @@
+model	nDCG	Recall	HR	Precision
+ItemKNN_nn=998_sim=cosine_imp=standard_bin=False_shrink=0_norm=True_asymalpha=_tvalpha=_tvbeta=_rweights=	0.17534157548035734	0.21733350397300763	0.6172326589595376	0.07863078034682082
