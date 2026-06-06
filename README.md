@@ -8,7 +8,7 @@ Large teacher models contain rich collaborative knowledge, complex ranking behav
 
 The current framework supports:
 
-- teacher import from `.pth` or `.pt` embedding checkpoints or predictions `.json` exports into `.teacher`;
+- teacher import from `.pth` or `.pt` embedding checkpoints or `.json` predictions, exported into `.teacher`;
 - adapter-backed teacher/student training from RecBole, Elliot, and Lenskit model definitions through a torch-based training pipeline;
 - 6 distillers: DE, RRD, DE+RRD, HTD, FTD, UnKD.
 
@@ -396,7 +396,7 @@ python scripts/recdistill/train_student.py \
   --lambda-de 0.1
 ```
 
-Straight student training produces `.student` artifacts, while distilled student training produces `.distilled_student` artifacts. Both are PyTorch artifact payloads containing model state, config, metadata, and history.
+Distilled student training produces `.distilled_student` artifacts, containing model state, config, metadata, and history.
 
 ## Experiment Launchers
 
