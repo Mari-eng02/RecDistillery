@@ -22,10 +22,13 @@ from recdistill.native_runner import (
     NativeModelTrainingRunner,
     native_args_from_config_file,
 )
-from recdistill.paths import AMAZONCD, BOOKCROSSING, BPRMF, CITEULIKE, LGCN, NMF
+from recdistill.paths import AMAZONCD, BOOKCROSSING, CITEULIKE
 from recdistill.paths import experiment_artifact_filename, experiment_artifact_path, normalize_experiment_id
 from recdistill.model_validation import validate_distillation_request, validate_trainable_model
 from recdistill.training import set_seed
+
+DEFAULT_BACKBONE = "BPRMF"
+TRAINABLE_BACKBONES = ["BPRMF", "LINE", "LGCN", "NGCF", "DGCF", "SGL", "ULTRAGCN", "SPECTRALCF", "NMF"]
 
 
 def _bayesian_enabled(config_path: str | Path, root_key: str) -> bool:
@@ -53,7 +56,7 @@ def _run_optuna(config_path: str | Path) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a native RecDistill student.")
-    parser.add_argument("--backbone", type=str, default=BPRMF, help="Student recommendation backbone")
+    parser.add_argument("--backbone", type=str, default=DEFAULT_BACKBONE, help="Student recommendation backbone")
     parser.add_argument("--framework", type=str, default=None, choices=["recbole", "elliot", "lenskit"])
     parser.add_argument("--dataset", type=str, default=CITEULIKE, help="Dataset name")
     parser.add_argument("--config", type=str, default=None, help="Optional native YAML/JSON config")
@@ -76,7 +79,7 @@ if __name__ == "__main__":
     parser.add_argument("--skip-eval", action="store_true")
 
     args = parser.parse_args()
-    backbones = [BPRMF, "LINE", LGCN, "NGCF", "DGCF", "SGL", "ULTRAGCN", "SPECTRALCF", NMF]
+    backbones = TRAINABLE_BACKBONES
     datasets = [CITEULIKE, BOOKCROSSING, AMAZONCD]
     distillation = str(args.distillation).strip().lower()
     is_plain = distillation in {"none", "plain", "no", "false", "0"}

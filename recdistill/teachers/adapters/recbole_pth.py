@@ -12,9 +12,16 @@ from recdistill.teachers.state import TeacherState
 
 
 class RecBolePthAdapter:
+    """Import RecBole `.pth` checkpoints that contain embedding tensors.
+
+    The adapter inspects the state dict, finds compatible user/item embedding
+    matrices, and stores the source tensor keys in teacher metadata.
+    """
+
     name = "recbole_pth"
 
     def can_load(self, source: TeacherSource) -> bool:
+        """Return `True` when a `.pth` checkpoint exposes teacher embeddings."""
         if _matches(source.format) or _matches(source.framework):
             return True
         if source.path is None or Path(source.path).suffix.lower() != ".pth":
@@ -26,6 +33,7 @@ class RecBolePthAdapter:
         return _find_user_item_embeddings(state_dict) is not None
 
     def load(self, source: TeacherSource, device: torch.device | str | None = None) -> TeacherState:
+        """Load a RecBole checkpoint and convert its embeddings to `TeacherState`."""
         if source.path is None:
             raise ValueError("RecBolePthAdapter requires --input.")
         payload = _load_checkpoint(source.path)

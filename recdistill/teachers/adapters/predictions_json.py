@@ -11,14 +11,23 @@ from recdistill.teachers.state import PrecomputedTopKScorer, TeacherState
 
 
 class PredictionsJsonAdapter:
+    """Import a teacher from JSON prediction rows.
+
+    The JSON payload can be a list of rows, a dictionary with a `predictions`
+    field, or column-oriented lists containing at least `user` and `item`.
+    Rows are converted into a `PrecomputedTopKScorer`.
+    """
+
     name = "predictions_json"
 
     def can_load(self, source: TeacherSource) -> bool:
+        """Return `True` for JSON prediction sources or matching format hints."""
         if _matches(source.format) or _matches(source.framework):
             return True
         return source.path is not None and Path(source.path).suffix.lower() == ".json"
 
     def load(self, source: TeacherSource, device: torch.device | str | None = None) -> TeacherState:
+        """Read the JSON payload and return a scorer-backed `TeacherState`."""
         if source.path is None:
             raise ValueError("PredictionsJsonAdapter requires --input.")
         payload = json.loads(Path(source.path).read_text(encoding="utf-8"))

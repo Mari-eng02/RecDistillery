@@ -10,6 +10,13 @@ from recdistill.teachers.state import TeacherState
 
 
 class TeacherAdapter(Protocol):
+    """Protocol implemented by teacher import adapters.
+
+    Attributes:
+        name: Stable registry key used by `--list-adapters` and adapter
+            resolution.
+    """
+
     name: str
 
     def can_load(self, source: TeacherSource) -> bool: ...
@@ -21,16 +28,24 @@ _ADAPTERS: dict[str, TeacherAdapter] = {}
 
 
 def register_teacher_adapter(adapter: TeacherAdapter, *aliases: str) -> None:
+    """Register an adapter under its primary name and optional aliases."""
     names = (adapter.name, *aliases)
     for name in names:
         _ADAPTERS[_normalize(name)] = adapter
 
 
 def available_teacher_adapters() -> tuple[str, ...]:
+    """Return the sorted adapter keys currently available in the registry."""
     return tuple(sorted(_ADAPTERS))
 
 
 def resolve_teacher_adapter(source: TeacherSource) -> TeacherAdapter:
+    """Choose the adapter able to load `source`.
+
+    Resolution first honors an explicit adapter import path, then exact format
+    or framework hints, and finally asks registered adapters whether they can
+    load the source.
+    """
     if source.adapter:
         return _load_adapter_object(source.adapter)
 
@@ -60,6 +75,7 @@ def resolve_teacher_adapter(source: TeacherSource) -> TeacherAdapter:
 
 
 def load_teacher_state(source: TeacherSource, device: torch.device | str | None = None) -> TeacherState:
+    """Resolve an adapter and load a `TeacherState` from `source`."""
     adapter = resolve_teacher_adapter(source)
     return adapter.load(source, device=device)
 

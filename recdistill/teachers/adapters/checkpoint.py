@@ -14,9 +14,17 @@ from recdistill.teachers.state import PrecomputedScoresScorer, PrecomputedTopKSc
 
 
 class CheckpointAdapter:
+    """Load generic PyTorch checkpoints into `TeacherState`.
+
+    The adapter accepts serialized `.teacher` payloads, embedding dictionaries,
+    dense score matrices, and top-k ranking payloads stored in `.pt`, `.pth`,
+    `.ckpt`, or `.teacher` files.
+    """
+
     name = "checkpoint"
 
     def can_load(self, source: TeacherSource) -> bool:
+        """Return `True` when the checkpoint payload can form a teacher state."""
         if _matches(source.format) or _matches(source.framework):
             return True
         if source.path is None:
@@ -30,6 +38,7 @@ class CheckpointAdapter:
         return _can_build_teacher_state(payload)
 
     def load(self, source: TeacherSource, device: torch.device | str | None = None) -> TeacherState:
+        """Load the checkpoint and convert it to `TeacherState`."""
         if source.path is None:
             raise ValueError("CheckpointAdapter requires --input.")
         payload = _load_checkpoint(source.path)

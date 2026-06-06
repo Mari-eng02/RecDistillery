@@ -5,6 +5,7 @@ from typing import Any
 from datetime import datetime
 import uuid
 
+from recdistill.registry import SUPPORTED_BACKBONES as _SUPPORTED_BACKBONES
 from recdistill.registry import canonical_model_name, distiller_slug, model_slug
 
 
@@ -24,6 +25,8 @@ BOOKCROSSING = "bookcrossing"
 AMAZONDM = "amazon_dm"
 AMAZONCD = "amazon_cd"
 
+# Backward-compatible aliases kept for older scripts/notebooks. New code should
+# use recdistill.registry for supported model names.
 LGCN = "LGCN"
 BPRMF = "BPRMF"
 NMF = "NMF"
@@ -38,8 +41,17 @@ _DATASET_FILENAME_BY_TYPE = {
 
 
 class PathManager:
+    """Compatibility namespace for common runtime path labels.
+
+    The current result layout no longer groups artifacts by backbone-specific
+    nested directories. Artifact paths are resolved through run directories
+    under `results/<kind>/<run>/artifacts/`, while supported model names are
+    maintained by `recdistill.registry`.
+    """
+
     DISTILLERS = ["de", "rrd", "unkd", "htd", "ftd", "de_rrd", "de_unkd", "rrd_unkd", "de_rrd_unkd"]
     BACKBONES = ["bprmf", "lgcn", "nmf"]
+    SUPPORTED_MODELS = sorted(_SUPPORTED_BACKBONES)
     DATASETS = ["amazon_cd", "bookcrossing", "citeulike"]
 
 

@@ -7,12 +7,26 @@ import torch
 
 
 class TeacherScorer(Protocol):
+    """Protocol implemented by scorer-only teacher representations.
+
+    A scorer computes item scores for one user without requiring explicit
+    user/item embedding matrices. Import adapters use it for prediction exports,
+    top-k rankings, or dense score matrices.
+    """
+
     def to(self, device: torch.device | str): ...
     def score_items_for_user(self, user: int, num_items: int) -> torch.Tensor: ...
 
 
 @dataclass
 class PrecomputedScoresScorer:
+    """Dense precomputed teacher score matrix.
+
+    Attributes:
+        scores: Tensor with shape `[num_users, num_items]`. Each row contains
+            the teacher scores for all candidate items of one user.
+    """
+
     scores: torch.Tensor
 
     def __post_init__(self) -> None:
@@ -32,6 +46,7 @@ class PrecomputedScoresScorer:
         return PrecomputedScoresScorer(scores=self.scores.to(device))
 
     def score_items_for_user(self, user: int, num_items: int) -> torch.Tensor:
+        """Return the score vector for a user, padded or truncated to `num_items`."""
         if user < 0 or user >= self.num_users:
             raise IndexError(f"User index out of bounds for precomputed scores: {user}")
         scores = self.scores[user]
@@ -44,6 +59,16 @@ class PrecomputedScoresScorer:
 
 @dataclass
 class PrecomputedTopKScorer:
+    """Sparse scorer backed by precomputed ranked items.
+
+    Attributes:
+        topk_items: Integer tensor with shape `[num_users, top_k]`.
+        topk_scores: Optional score tensor aligned with `topk_items`.
+        fill_value: Score assigned to items that are absent from the top-k list.
+        num_items_override: Optional catalog size when it cannot be inferred
+            from the maximum item id.
+    """
+
     topk_items: torch.Tensor
     topk_scores: torch.Tensor | None = None
     fill_value: float = float("-inf")
@@ -82,6 +107,7 @@ class PrecomputedTopKScorer:
         )
 
     def score_items_for_user(self, user: int, num_items: int) -> torch.Tensor:
+        """Expand one user's top-k ranking into a full score vector."""
         if user < 0 or user >= self.num_users:
             raise IndexError(f"User index out of bounds for precomputed top-k: {user}")
         scores = torch.full((num_items,), float(self.fill_value), dtype=torch.float32, device=self.topk_items.device)
@@ -101,6 +127,19 @@ class PrecomputedTopKScorer:
 
 @dataclass
 class TeacherState:
+    """Framework-neutral teacher representation used by distillation.
+
+    A teacher can be represented either by user/item embeddings or by a scorer.
+    The same state object is used for native teachers, imported checkpoints,
+    prediction JSON files, and serialized `.teacher` artifacts.
+
+    Attributes:
+        user_embeddings: Optional user embedding matrix.
+        item_embeddings: Optional item embedding matrix.
+        metadata: Free-form provenance and mapping information.
+        scorer: Optional scorer-only representation.
+    """
+
     user_embeddings: torch.Tensor | None = None
     item_embeddings: torch.Tensor | None = None
     metadata: dict[str, object] = field(default_factory=dict)
@@ -164,6 +203,7 @@ class TeacherState:
         return self.user_embeddings is not None and self.item_embeddings is not None
 
     def to(self, device: torch.device | str) -> "TeacherState":
+        """Return a copy of the teacher state moved to `device`."""
         scorer = self.scorer.to(device) if self.scorer is not None else None
         return TeacherState(
             user_embeddings=self.user_embeddings.to(device) if self.user_embeddings is not None else None,
