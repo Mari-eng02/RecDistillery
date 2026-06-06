@@ -1,0 +1,10 @@
+.doc-signature,
+.doc-heading code.highlight {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.25rem;
+  background: var(--md-code-bg-color);
+  white-space: pre-wrap;
+}

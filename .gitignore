@@ -218,4 +218,3 @@ results/
 /data/
 checkpoints/
 optuna_studies.db
-recdistillery-docs/

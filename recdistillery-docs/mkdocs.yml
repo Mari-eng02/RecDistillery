@@ -1,0 +1,94 @@
+site_name: RecDistilleryDocumentation
+repo_url: "https://github.com/Mari-eng02/RecDistillery"
+repo_name: "RecDistillery"
+docs_dir: src
+site_dir: site
+
+theme:
+  name: material
+  features: 
+    - navigation.tabs           # Adds navigation bar
+    - navigation.tabs.sticky    # Sticks the navigation bar, so it is always open
+    - navigation.top            # Back-to-top button appears when you are scrolling up
+    - navigation.footer         # Adds a black footer
+    - navigation.indexes        # Attachs documents to section
+    - search.suggest            # Adds suggestions when you use the search bar
+    - search.highlight                   
+    - content.code.annotation
+    - content.code.copy         
+    - toc.follow                # The Table of content (toc) follows user position in the page
+  language: en
+  palette:                      # Button for light/dark mode
+    - scheme: default
+      toggle:
+        icon: material/toggle-switch-off-outline 
+        name: Switch to dark mode
+      primary: blue
+      accent: purple 
+    - scheme: slate 
+      toggle:
+        icon: material/toggle-switch
+        name: Switch to light mode    
+      primary: blue
+      accent: lime
+
+plugins:  
+  - search                                    # Adds search-bar
+  - section-index 
+  - mkdocstrings:                             # mdocstrings allows mkdocs to generate documentation from docstrings
+      handlers:
+        python:
+          paths:
+            - ..
+          options:
+            show_source: true                 # shows source code
+            members_order: source             # modules in documentation follow the order of implementation in the code
+            show_root_toc_entry: false        # shows the name of the file.py in the table of contents
+            show_root_heading: false          # shows the name of the file.py in the page
+            show_root_full_path: false
+            show_symbol_type_heading: true    # shows tags [attr, class, meth, func]
+            show_symbol_type_toc: true        # shows tags in the toc
+            show_signature: true              # shows the function as funcName(variables). If false: funcName
+            show_signature_annotations: true
+            separate_signature: false
+            line_length: 88
+            docstring_style: google
+            show_if_no_docstring: true        # shows classes/functions even when docstrings are missing
+            
+
+
+markdown_extensions:
+  - admonition
+  - toc:
+      toc_depth: 2
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.arithmatex:
+      generic: true
+  - footnotes
+  - pymdownx.details
+  - pymdownx.mark
+  - attr_list
+
+# Adds customize style options
+extra_css:
+  - stylesheets/custom.css                    
+
+
+# This is the navigation tree. MkDocs looks for documentation in src/
+nav: 
+  - Home: index.md
+  - Documentation: 
+      - Overview: documentation/overview.md
+      - Data And Datasets: documentation/data.md
+      - Teachers: documentation/teachers.md
+      - Students And Backbones: documentation/students.md
+      - Distillers: documentation/distillers.md
+      - Training Pipeline: documentation/training.md
+      - Evaluation: documentation/evaluation.md
+      - Configuration: documentation/configuration.md
+      - Artifacts And Results: documentation/artifacts.md
+      - API Reference: documentation/api.md
