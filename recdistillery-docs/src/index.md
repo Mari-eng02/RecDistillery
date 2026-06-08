@@ -1,6 +1,6 @@
 # RecDistillery Documentation
 
-<img src="./assets/images/architecture.drawio.svg"  width="800">
+<img src="./assets/images/architecture.png"  width="800">
 
 This is the official documentation for *"RecDistillery: A Framework for Teacher-Student Knowledge Distillation in Recommender Systems"*.
 
