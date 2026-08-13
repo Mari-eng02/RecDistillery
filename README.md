@@ -106,7 +106,7 @@ Optional:
 ## Clone The Repository
 
 ```bash
-git clone <REPO_URL>
+git clone https://github.com/sisinflab/RecDistillery.git
 cd RecDistillery
 ```
 
