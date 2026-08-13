@@ -11,6 +11,9 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: recdistillery-docs
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
