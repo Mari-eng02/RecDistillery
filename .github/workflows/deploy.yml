@@ -25,8 +25,8 @@ jobs:
 
       - name: Install MkDocs and Dependencies
         run: |
-          pip install mkdocs
-          pip install mkdocs-material
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
 
       - name: Deploy to GitHub Pages
         run: mkdocs gh-deploy --force
