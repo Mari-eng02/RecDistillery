@@ -228,7 +228,7 @@ RecDistillery treats the `.teacher` file as the framework-neutral teacher format
 The official path is `scripts/recdistill/import_teacher.py`. The import script currently registers only:
 
 - `CheckpointAdapter`: generic torch checkpoints containing a serialized teacher state, embeddings, scores, or top-k tensors.
-- `PredictionsJsonAdapter`: JSON prediction exports with `user`, `item`, and optional `score`/`rating`/`rank` fields.
+- `PredictionsJsonAdapter`: JSON (or `.tsv` or `.csv`) prediction exports with `user`, `item`, and optional `score`/`rating`/`rank` fields.
 - `RecBolePthAdapter`: `.pth` checkpoints containing user and item embedding tensors.
 
 List the active adapters with:
@@ -253,14 +253,13 @@ Import precomputed recommendation lists:
 
 ```bash
 python scripts/recdistill/import_teacher.py \
-  --input path/to/predictions.json \
-  --format predictions_json \
-  --framework external \
-  --model-name ExternalTeacher \
-  --dataset citeulike
+  --input path/to/predictions.tsv \
+  --dataset amazon_cd \
+  --model-name ItemKNN \
+  --framework external
 ```
 
-Import a `.pth` checkpoint with user/item embeddings:
+Import a `.pth` checkpoint with user/item embeddings (e.g., from RecBole):
 
 ```bash
 python scripts/recdistill/import_teacher.py \
@@ -271,7 +270,9 @@ python scripts/recdistill/import_teacher.py \
   --dataset citeulike
 ```
 
-External prediction exports must use a clear ID space. If `user` and `item`are the same IDs used in `data/<dataset>/*.tsv`, the import can be evaluated as `id_space=dataset_integer`. If they are framework-internal indices, export the framework mapping and include `public_to_local_user_id` and `public_to_local_item_id` metadata, or convert the predictions back to original dataset IDs before import. Embedding checkpoints usually contain internal embedding rows, so they need the same mapping to be evaluated against raw dataset splits.
+External prediction exports (`.tsv`, `.csv`, or `.json`) can contain raw dataset IDs or raw user tokens. When `--dataset` is provided, `import_teacher.py` automatically maps these IDs into canonical 0-based dataset indices ($0 \dots N-1, 0 \dots M-1$) across all splits (`train`, `val`, `test`), enabling evaluation with zero dropped interactions.
+
+If an external checkpoint uses framework-internal indices (without raw dataset tokens), supply the framework ID mapping via `public_to_local_user_id` and `public_to_local_item_id` metadata, or specify `--metadata id_space=dataset_integer` if indices match the dataset splits.
 
 Imported teachers are saved as tracked teacher runs:
 

@@ -11,27 +11,35 @@ from recdistill.teachers.state import PrecomputedTopKScorer, TeacherState
 
 
 class PredictionsJsonAdapter:
-    """Import a teacher from JSON prediction rows.
+    """Import a teacher from JSON, TSV, or CSV prediction rows.
 
-    The JSON payload can be a list of rows, a dictionary with a `predictions`
-    field, or column-oriented lists containing at least `user` and `item`.
+    The prediction payload can be JSON (list of rows or dict with predictions),
+    or TSV/CSV prediction exports containing user, item, and score/rating.
     Rows are converted into a `PrecomputedTopKScorer`.
     """
 
     name = "predictions_json"
 
     def can_load(self, source: TeacherSource) -> bool:
-        """Return `True` for JSON prediction sources or matching format hints."""
+        """Return `True` for JSON/TSV/CSV prediction sources or matching format hints."""
         if _matches(source.format) or _matches(source.framework):
             return True
-        return source.path is not None and Path(source.path).suffix.lower() == ".json"
+        if source.path is not None:
+            suffix = Path(source.path).suffix.lower()
+            return suffix in {".json", ".tsv", ".csv", ".txt"}
+        return False
 
     def load(self, source: TeacherSource, device: torch.device | str | None = None) -> TeacherState:
-        """Read the JSON payload and return a scorer-backed `TeacherState`."""
+        """Read the prediction payload and return a scorer-backed `TeacherState`."""
         if source.path is None:
             raise ValueError("PredictionsJsonAdapter requires --input.")
-        payload = json.loads(Path(source.path).read_text(encoding="utf-8"))
-        rows = _prediction_rows(payload)
+        path = Path(source.path)
+        suffix = path.suffix.lower()
+        if suffix in {".tsv", ".csv", ".txt"} or source.format in {"tsv", "csv", "predictions_tsv"}:
+            rows = _read_tsv_rows(path)
+        else:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            rows = _prediction_rows(payload)
         scorer, metadata = _topk_scorer_from_rows(rows, source.metadata)
         metadata.update(source.metadata)
         metadata.setdefault("source_path", str(source.path))
@@ -50,7 +58,27 @@ def _matches(value: str | None) -> bool:
         "prediction_json",
         "json_predictions",
         "json",
+        "tsv",
+        "csv",
+        "predictions_tsv",
+        "predictions_csv",
     }
+
+
+def _read_tsv_rows(path: Path) -> list[dict[str, Any]]:
+    import csv
+    delim = "\t" if path.suffix.lower() in {".tsv", ".txt"} else ","
+    rows: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as fp:
+        reader = csv.reader(fp, delimiter=delim)
+        for line in reader:
+            if not line or line[0].startswith("#") or line[0].lower() in {"user", "userid", "user_id"}:
+                continue
+            if len(line) >= 3:
+                rows.append({"user": line[0].strip(), "item": line[1].strip(), "score": float(line[2])})
+            elif len(line) == 2:
+                rows.append({"user": line[0].strip(), "item": line[1].strip(), "score": 1.0})
+    return rows
 
 
 def _prediction_rows(payload: Any) -> list[dict[str, Any]]:
@@ -76,12 +104,94 @@ def _topk_scorer_from_rows(
     source_metadata: dict[str, Any] | None = None,
 ) -> tuple[PrecomputedTopKScorer, dict[str, Any]]:
     if not rows:
-        raise ValueError("Predictions JSON contains no rows.")
+        raise ValueError("Predictions file contains no rows.")
 
     source_metadata = source_metadata or {}
+    dataset_name = source_metadata.get("dataset")
+
+    # If dataset is supplied, attempt mapping raw IDs (strings or raw integers) to dataset 0-based indices
+    if dataset_name:
+        mapped_rows, num_users, num_items = _map_rows_with_dataset_encoder(rows, str(dataset_name))
+        if mapped_rows:
+            metadata_with_shape = dict(source_metadata)
+            metadata_with_shape["num_users"] = num_users
+            metadata_with_shape["num_items"] = num_items
+            metadata_with_shape["id_space"] = "dataset_integer"
+            return _topk_scorer_from_integer_rows(mapped_rows, metadata_with_shape)
+
     if _rows_use_integer_ids(rows):
         return _topk_scorer_from_integer_rows(rows, source_metadata)
     return _topk_scorer_from_mapped_rows(rows)
+
+
+def _lookup_encoder_id(raw: Any, lookup: dict[Any, int]) -> int | None:
+    if raw in lookup:
+        return lookup[raw]
+    s = str(raw).strip()
+    if s in lookup:
+        return lookup[s]
+    try:
+        val_int = int(s)
+        if val_int in lookup:
+            return lookup[val_int]
+        if str(val_int) in lookup:
+            return lookup[str(val_int)]
+    except (ValueError, TypeError):
+        pass
+    return None
+
+
+def _map_rows_with_dataset_encoder(
+    rows: list[dict[str, Any]],
+    dataset_name: str,
+) -> tuple[list[dict[str, Any]], int, int]:
+    try:
+        from recdistill.data.datarec_loader import (
+            ITEM_COLUMNS,
+            SPLIT_ORDER,
+            USER_COLUMNS,
+            _FallbackIncrementalEncoder,
+            _datarec_incremental_encoder,
+            _pick_column,
+            load_split_frame,
+        )
+    except Exception:
+        return [], 0, 0
+
+    encoder_cls = _datarec_incremental_encoder() or _FallbackIncrementalEncoder
+    u_enc = encoder_cls()
+    i_enc = encoder_cls()
+
+    for split in SPLIT_ORDER:
+        try:
+            frame = load_split_frame(dataset_name, split).frame
+            u_col = _pick_column(frame.columns, USER_COLUMNS)
+            i_col = _pick_column(frame.columns, ITEM_COLUMNS)
+            u_enc.encode_many(frame[u_col].tolist())
+            i_enc.encode_many(frame[i_col].tolist())
+        except Exception:
+            pass
+
+    if len(u_enc) == 0 or len(i_enc) == 0:
+        return [], 0, 0
+
+    u_lookup = u_enc._forward if hasattr(u_enc, "_forward") else {}
+    i_lookup = i_enc._forward if hasattr(i_enc, "_forward") else {}
+
+    mapped_rows: list[dict[str, Any]] = []
+    for row in rows:
+        u_raw = row.get("user")
+        i_raw = row.get("item")
+        u_idx = _lookup_encoder_id(u_raw, u_lookup)
+        i_idx = _lookup_encoder_id(i_raw, i_lookup)
+
+        if u_idx is not None and i_idx is not None:
+            new_row = dict(row)
+            new_row["user"] = u_idx
+            new_row["item"] = i_idx
+            mapped_rows.append(new_row)
+
+    return mapped_rows, len(u_enc), len(i_enc)
 
 
 def _topk_scorer_from_integer_rows(

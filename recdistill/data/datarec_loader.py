@@ -223,10 +223,21 @@ def load_ground_truth_split(
 ) -> tuple[dict[int, set[int]], int]:
     if _normalize_id_space(id_space) == "dataset_integer":
         loaded = load_split_frame(dataset_name, split_name, use_datarec=False)
-        return _frame_to_split(
+        split, dropped = _frame_to_split(
             loaded.frame,
             user_mapping=None,
             item_mapping=None,
+            num_users=num_users,
+            num_items=num_items,
+        )
+        if dropped == 0:
+            return split, dropped
+        encoded = load_encoded_dataset(dataset_name)
+        normalized_split = "val" if split_name == "validation" else split_name
+        if normalized_split not in encoded.frames:
+            raise ValueError(f"Unknown split: {split_name}")
+        return _encoded_frame_to_split(
+            encoded.frames[normalized_split],
             num_users=num_users,
             num_items=num_items,
         )

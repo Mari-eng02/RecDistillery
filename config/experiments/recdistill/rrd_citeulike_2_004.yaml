@@ -1,0 +1,27 @@
+experiment:
+  id: '004'
+  name: rrd_citeulike_2
+  kind: recdistill
+distill_student:
+  dataset: citeulike
+  teacher:
+    model: ItemKNN
+    path: results/teacher/20260601_165801_external_ItemKNN_citeulike_81319fc9/artifacts/external_ItemKNN_citeulike_81319fc9_best.teacher 
+  student:
+    default: student/elliot/nmf.yaml
+  optimization:
+    default: optimization/default.yaml
+    batch_size: 2048
+    bayesian:
+      enabled: true
+    early_stopping:
+      enabled: true
+  distillation:
+    strategy: RRD
+    default: distillation/rrd.yaml
+  runtime:
+    default: runtime/default.yaml
+    num_workers: 4
+  evaluation:
+    default: evaluation/default.yaml
+    batch_size: 1024
